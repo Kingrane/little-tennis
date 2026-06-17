@@ -10,16 +10,19 @@ import {
 } from '@/utils/constants'
 
 /**
- * Pre-match menu: choose paddle + difficulty + mode.
- * v1: Practice / AI Match buttons transition to READY (no gameplay yet).
- *
- * Minimal thin typography, rounded glow pills, GSAP enter transitions.
+ * Menu + post-match screens.
+ * - READY: configure paddle + difficulty, start match
+ * - ENDED: show result, play again / menu
  */
+
 export function MenuScreen() {
   const rootRef = useRef<HTMLDivElement>(null)
   const phase = useGameStore((s) => s.phase)
   const paddle = useGameStore((s) => s.paddle)
   const difficulty = useGameStore((s) => s.difficulty)
+  const matchWinner = useGameStore((s) => s.matchWinner)
+  const scorePlayer = useGameStore((s) => s.scorePlayer)
+  const scoreAI = useGameStore((s) => s.scoreAI)
 
   useEffect(() => {
     if (!rootRef.current) return
@@ -38,6 +41,84 @@ export function MenuScreen() {
 
   if (phase === 'BOOT') return null
 
+  // --- ENDED screen ---
+  if (phase === 'ENDED' && matchWinner) {
+    return (
+      <div
+        ref={rootRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+        }}
+      >
+        <div
+          style={{
+            width: 'min(520px, 90vw)',
+            padding: '48px 56px',
+            background: 'rgba(20, 16, 12, 0.55)',
+            backdropFilter: 'blur(18px)',
+            border: '1px solid rgba(201,169,97,0.18)',
+            borderRadius: 28,
+            boxShadow: '0 30px 90px rgba(0,0,0,0.45)',
+            pointerEvents: 'auto',
+            textAlign: 'center',
+          }}
+        >
+          <div className="t-eyebrow menu-item" style={{ marginBottom: 16 }}>
+            {matchWinner === 'player' ? 'Victory' : 'Defeat'}
+          </div>
+
+          <div
+            className="menu-item"
+            style={{
+              fontSize: 48,
+              fontWeight: 200,
+              color: 'var(--cream)',
+              textShadow: '0 0 30px rgba(201,169,97,0.4)',
+              marginBottom: 8,
+            }}
+          >
+            {scorePlayer} — {scoreAI}
+          </div>
+
+          <div
+            className="menu-item"
+            style={{
+              fontSize: 11,
+              letterSpacing: '0.3em',
+              color: 'var(--ink-faint)',
+              marginBottom: 32,
+            }}
+          >
+            {matchWinner === 'player' ? 'Well played' : 'Better luck next time'}
+          </div>
+
+          <div
+            className="menu-item"
+            style={{ display: 'flex', gap: 16, justifyContent: 'center' }}
+          >
+            <button className="btn-glow" onClick={() => game.startMatch()}>
+              Play Again
+            </button>
+            <button
+              className="btn-glow"
+              onClick={() => {
+                game.quitToMenu()
+              }}
+            >
+              Menu
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // --- READY / PLAYING / POINT menu overlay ---
   const paddleList = Object.values(PADDLES)
   const diffList = Object.values(DIFFICULTIES)
 
@@ -118,31 +199,14 @@ export function MenuScreen() {
           </div>
         </div>
 
-        {/* Modes */}
+        {/* Start */}
         <div
           className="menu-item"
           style={{ marginTop: 36, display: 'flex', gap: 16, justifyContent: 'center' }}
         >
           <button className="btn-glow" onClick={() => game.startMatch()}>
-            Practice
+            Start Match
           </button>
-          <button className="btn-glow" onClick={() => game.startMatch()}>
-            AI Match
-          </button>
-        </div>
-
-        <div
-          className="menu-item"
-          style={{
-            marginTop: 22,
-            textAlign: 'center',
-            fontSize: 10,
-            letterSpacing: '0.3em',
-            textTransform: 'uppercase',
-            color: 'var(--ink-faint)',
-          }}
-        >
-          Gameplay arrives next phase
         </div>
       </div>
     </div>

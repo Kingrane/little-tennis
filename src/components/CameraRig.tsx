@@ -4,15 +4,14 @@ import * as THREE from 'three'
 import { CAMERA } from '@/utils/constants'
 import { dampVector3, dampEuler } from '@/utils/easing'
 import { useGameStore } from '@/store/useGameStore'
+import { physics } from '@/physics/PhysicsManager'
 
 /**
  * Cinematic camera rig.
- * - Sits over the player's near edge of the table, looking down its length
+ * - Over player's near edge, looking down the table
  * - Subtle breathing (sin-based position + tilt)
  * - Mouse parallax micro-tilt (heavily damped)
- * - Never 1:1, always cinematic easing
- *
- * FOV 55, tone mapping handled at the renderer level.
+ * - Camera shake on impact (from PhysicsManager.cameraShake)
  */
 
 const BASE_POS = CAMERA.position.clone()
@@ -25,20 +24,19 @@ export default function CameraRig() {
   const lookTarget = useRef(new THREE.Vector3())
   const sensitivity = useGameStore((s) => s.settings.mouseSensitivity)
 
-  // Position camera once
   useRef<THREE.PerspectiveCamera>(camera as THREE.PerspectiveCamera)
 
   useFrame((_state, dt) => {
     const t = clock.elapsedTime
     const cam = camera as THREE.PerspectiveCamera
 
-    // Breathing — sine waves
-    const breath = Math.sin(t * (Math.PI * 2) / CAMERA.breathPeriod)
+    // Breathing
+    const breath = Math.sin((t * Math.PI * 2) / CAMERA.breathPeriod)
     const breathX = breath * CAMERA.breathAmp * 0.6
     const breathY = breath * CAMERA.breathAmp
     const breathRotZ = breath * CAMERA.breathAmp * 0.3
 
-    // Mouse parallax — clamp pointer
+    // Mouse parallax
     const px = THREE.MathUtils.clamp(pointer.x, -1, 1) * sensitivity
     const py = THREE.MathUtils.clamp(pointer.y, -1, 1) * sensitivity
 
@@ -48,17 +46,21 @@ export default function CameraRig() {
       BASE_POS.z,
     )
 
-    // Damp position
+    // Camera shake from physics
+    const shake = physics.cameraShake
+    if (shake > 0.001) {
+      DESIRED_POS.x += (Math.random() - 0.5) * shake
+      DESIRED_POS.y += (Math.random() - 0.5) * shake * 0.6
+    }
+
     dampVector3(cam.position, DESIRED_POS, CAMERA.damp, dt)
 
-    // Look at base target with slight parallax-driven yaw/pitch
     DESIRED_EULER.set(
-      py * CAMERA.parallaxRot * 0.4,
+      py * CAMERA.parallaxRot * 0.4 + (Math.random() - 0.5) * shake * 0.5,
       -px * CAMERA.parallaxRot,
-      breathRotZ,
+      breathRotZ + (Math.random() - 0.5) * shake * 0.3,
     )
 
-    // We construct a target offset from BASE_TARGET by rotating slightly
     lookTarget.current.set(
       BASE_TARGET.x + px * 0.15,
       BASE_TARGET.y + py * 0.08,
@@ -66,8 +68,6 @@ export default function CameraRig() {
     )
 
     cam.lookAt(lookTarget.current)
-
-    // Apply extra roll via rotation.z (after lookAt set yaw/pitch)
     cam.rotation.z = 0
     dampEuler(cam.rotation, DESIRED_EULER, 4, dt)
   })

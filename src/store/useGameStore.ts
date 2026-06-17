@@ -22,9 +22,17 @@ interface GameState {
   paddle: PaddleId
   difficulty: DifficultyId
 
-  /* score (wired in a later phase) */
+  /* score */
   scorePlayer: number
   scoreAI: number
+
+  /* serve */
+  servingPlayer: boolean // true = player serves, false = AI serves
+  serveCount: number // how many serves have been made total
+
+  /* match */
+  rallyActive: boolean
+  matchWinner: 'player' | 'ai' | null
 
   /* settings */
   settings: Settings
@@ -38,7 +46,11 @@ interface GameState {
   setDifficulty: (d: DifficultyId) => void
   updateSettings: (partial: Partial<Settings>) => void
   setAudioReady: (v: boolean) => void
+  scorePoint: (toPlayer: boolean) => void
+  setServing: (player: boolean) => void
+  setRallyActive: (v: boolean) => void
   reset: () => void
+  resetMatch: () => void
 }
 
 const defaultSettings: Settings = {
@@ -47,12 +59,16 @@ const defaultSettings: Settings = {
   mouseSensitivity: 1.0,
 }
 
-export const useGameStore = create<GameState>((set) => ({
+export const useGameStore = create<GameState>((set, get) => ({
   phase: 'BOOT',
   paddle: 'balanced',
   difficulty: 'skilled',
   scorePlayer: 0,
   scoreAI: 0,
+  servingPlayer: true,
+  serveCount: 0,
+  rallyActive: false,
+  matchWinner: null,
   settings: defaultSettings,
   audioReady: false,
 
@@ -62,10 +78,52 @@ export const useGameStore = create<GameState>((set) => ({
   updateSettings: (partial) =>
     set((s) => ({ settings: { ...s.settings, ...partial } })),
   setAudioReady: (audioReady) => set({ audioReady }),
+
+  scorePoint: (toPlayer: boolean) => {
+    const s = get()
+    const newPlayer = s.scorePlayer + (toPlayer ? 1 : 0)
+    const newAI = s.scoreAI + (toPlayer ? 0 : 1)
+
+    // Check win: 11 points, win by 2
+    const maxScore = Math.max(newPlayer, newAI)
+    let winner: 'player' | 'ai' | null = null
+    if (maxScore >= 11) {
+      if (newPlayer >= 11 && newPlayer - newAI >= 2) winner = 'player'
+      if (newAI >= 11 && newAI - newPlayer >= 2) winner = 'ai'
+    }
+
+    set({
+      scorePlayer: newPlayer,
+      scoreAI: newAI,
+      serveCount: s.serveCount + 1,
+      // Alternate serve every 2 points
+      servingPlayer: Math.floor((s.serveCount + 1) / 2) % 2 === 0,
+      matchWinner: winner,
+    })
+  },
+
+  setServing: (player) => set({ servingPlayer: player }),
+  setRallyActive: (rallyActive) => set({ rallyActive }),
+
   reset: () =>
     set({
       phase: 'MENU',
       scorePlayer: 0,
       scoreAI: 0,
+      serveCount: 0,
+      servingPlayer: true,
+      rallyActive: false,
+      matchWinner: null,
+    }),
+
+  resetMatch: () =>
+    set({
+      scorePlayer: 0,
+      scoreAI: 0,
+      serveCount: 0,
+      servingPlayer: true,
+      rallyActive: false,
+      matchWinner: null,
+      phase: 'READY',
     }),
 }))

@@ -4,9 +4,11 @@ import * as THREE from 'three'
 import Environment from './Environment'
 import Lights from '@/components/Lights'
 import Table from '@/components/Table'
-import Paddle from '@/components/Paddle'
+import { PlayerPaddle, AIPaddle } from '@/components/Paddle'
+import Ball from '@/components/Ball'
 import CameraRig from '@/components/CameraRig'
 import Effects from '@/components/Effects'
+import GameLoop from '@/components/GameLoop'
 import { CAMERA } from '@/utils/constants'
 import { Loader } from '@/components/Loader'
 
@@ -39,9 +41,12 @@ export default function MainScene() {
         <Lights />
         <Environment />
         <Table />
-        <Paddle />
+        <PlayerPaddle />
+        <AIPaddle />
+        <Ball />
         <CameraRig />
         <Effects />
+        <GameLoop />
       </Suspense>
 
       <Loader />
