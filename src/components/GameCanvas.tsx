@@ -569,13 +569,43 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Net mesh
     const netMeshGeo = new THREE.PlaneGeometry(TABLE_DIMENSIONS.netWidth, TABLE_DIMENSIONS.netHeight - 0.015);
-    // Grid textured or wireframe material for sleek look
+
+    // Create highly detailed procedural net grid canvas texture
+    const netCanvas = document.createElement("canvas");
+    netCanvas.width = 64;
+    netCanvas.height = 64;
+    const netCtx = netCanvas.getContext("2d");
+    if (netCtx) {
+      netCtx.clearRect(0, 0, 64, 64);
+      // Faint dark mesh backing for physical depth
+      netCtx.fillStyle = "rgba(25, 20, 15, 0.25)";
+      netCtx.fillRect(0, 0, 64, 64);
+
+      // Draw double-crossed textured nylon ropes
+      netCtx.strokeStyle = "rgba(235, 230, 222, 0.92)";
+      netCtx.lineWidth = 3.5;
+      netCtx.beginPath();
+      for (let i = -64; i <= 128; i += 16) {
+        netCtx.moveTo(i, 0);
+        netCtx.lineTo(i + 64, 64);
+
+        netCtx.moveTo(i + 64, 0);
+        netCtx.lineTo(i, 64);
+      }
+      netCtx.stroke();
+    }
+    const netTexture = new THREE.CanvasTexture(netCanvas);
+    netTexture.wrapS = THREE.RepeatWrapping;
+    netTexture.wrapT = THREE.RepeatWrapping;
+    // Repeat beautifully matching the dimensions of a standard tennis table
+    netTexture.repeat.set(70, 7);
+
     const netMeshMat = new THREE.MeshStandardMaterial({
-      color: "#dedad2",
+      map: netTexture,
       transparent: true,
-      opacity: 0.45,
-      wireframe: true,
       side: THREE.DoubleSide,
+      roughness: 0.9,
+      metalness: 0.1,
     });
     const netMesh = new THREE.Mesh(netMeshGeo, netMeshMat);
     netMesh.position.set(0, TABLE_DIMENSIONS.height + TABLE_DIMENSIONS.netHeight / 2, 0);

@@ -47,10 +47,15 @@ $$a_x = 0.035 \cdot \text{spin}_y \cdot |v_z|$$
 $$a_y = -0.035 \cdot \text{spin}_x \cdot v_z$$
 - **Z-Momentum Recovery**: Force-capped to $0$ on the Z axis to bypass unexpected slowdowns when aiming into extreme corners.
 
-### 3.3 Paddle Collision Hit solvers
+### 3.3 Paddle Collision Hit Solvers & Serve Safeguards
 A manual swipe strike triggers when player paddle coordinates overlap radial proximity metrics (Hit limit $r=0.22\text{m}$) within the sweet spot boundary ($Z \in [-1.6\text{m}, -1.1\text{m}]$):
 - **Contact Lift**: Base lift vectors clear the net with additional up/down velocity proportional to mouse swipe velocity.
 - **Automatic Serve Assistance**: For seamless accessibility, double-clicking or clicking *while* the ball is tossed executes a high-precision default serve directly toward the opponent's side, eliminating frustrating serve misses.
+- **Serve Protection State (`hasFiredServe`)**: A stateful flag ensures the automatic or manual serve hit executes exactly once per rally, preventing accidental double-hit triggers while swinging.
+- **Table Bounce Debouncer (`lastTableBounceTime`)**: A physical interval gate (minimum 120ms) prevents double-scoring glitches caused by rapid consecutive table-surface collisions in single frame-time steps.
+
+### 3.4 Upgraded Net Lattice mesh
+- **Procedural Nylon Grid**: Instead of plain wireframe diagonals, the game net features a procedurally generated canvas texture of repeating white-and-dark nylon diamonds, rendering a highly authentic physical table-tennis partition screen.
 
 ---
 
@@ -60,3 +65,4 @@ A manual swipe strike triggers when player paddle coordinates overlap radial pro
 2. **Prevent double scoring loops**: Ensure any point scoring triggers set `rallyState.current.isScorePending = true` immediately, blocking further frame executions from scheduling redundant `resetBall` timeouts. Reset the flag to `false` in `resetBall`.
 3. **Typography and Controls**: Standard text is styled using Inter and Space Grotesk. Do not override current CSS alignments which provide gorgeous anti-tech-larp breathing spaces.
 4. **Practice/Sandbox Mode Scoreboard**: Practice mode displays infinite playing counters without shifting servers or ending rounds at 11, allowing for long endurance training rallies. Keep both score displays active in the HUD.
+5. **Three-Column Menu Layout**: The landing page (`MainMenu.tsx`) utilizes a balanced, luxurious three-column layout (Left: selection Bot Engine cards with custom indicator lights, Center: bold display typography over a warm Terracotta-Sunset mesh lighting overlay with match actions, Right: Blade Arsenal cards with dynamic specifications progress bars). Keep this design fully responsive across devices.
