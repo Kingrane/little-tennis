@@ -93,7 +93,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           </div>
           <span className={`text-[10px] tracking-[0.4em] font-medium uppercase transition-all duration-300 ${isDark ? "text-white/50" : "text-[#1C1613]/65"
             }`}>
-            SOLACE TABLE TENNIS
+            ROMKA TABLE TENNIS
           </span>
         </div>
 
