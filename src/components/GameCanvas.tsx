@@ -1018,8 +1018,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
         // Apply visual rotation based on sweeping direction (tilting looks AMAZING)
         humanPaddleGroup.position.set(playerPaddlePos.current.x, playerPaddlePos.current.y, playerPaddlePos.current.z);
-        humanPaddleGroup.rotation.y = (playerPaddleVel.current.x * 0.02) + (mouse.current.x * 0.2); // Face target
-        humanPaddleGroup.rotation.x = Math.PI / 16 + (playerPaddleVel.current.y * -0.015); // Tilt up or down
+
+        // Custom target visual tilt angles:
+        // Y-axis facing (yaw) - faces slightly inward towards center of the table based on side and swipe momentum
+        const targetRotY = (playerPaddlePos.current.x * -0.26) + (playerPaddleVel.current.x * 0.018);
+        // X-axis tilting (pitch) - tilts forward or backward depending on height and vertical velocity
+        const targetRotX = (Math.PI / 16) + (playerPaddleVel.current.y * -0.012) + (playerPaddlePos.current.y - 0.85) * -0.22;
+        // Z-axis tilting (roll) - tilts left or right based on lateral position and horizontal velocity
+        const targetRotZ = (playerPaddlePos.current.x * -0.80) + (playerPaddleVel.current.x * -0.02);
+
+        // Constant smooth damping factor for a floating premium premium feel
+        const rotLerpSpeed = 0.12;
+        humanPaddleGroup.rotation.y += (targetRotY - humanPaddleGroup.rotation.y) * rotLerpSpeed;
+        humanPaddleGroup.rotation.x += (targetRotX - humanPaddleGroup.rotation.x) * rotLerpSpeed;
+        humanPaddleGroup.rotation.z += (targetRotZ - humanPaddleGroup.rotation.z) * rotLerpSpeed;
 
         // Update selected color matching (only for the front rubber face mesh)
         humanPaddleGroup.children.forEach((child) => {
@@ -1031,13 +1043,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }
         });
 
+        // Save previous coordinates of the opponent paddle to calculate exact velocity
+        const prevAiX = aiPaddlePos.current.x;
+        const prevAiY = aiPaddlePos.current.y;
+        const prevAiZ = aiPaddlePos.current.z;
+
         // --- AI WORKINGS or MULTIPLAYER COORDINATES TRIGGER ---
         if (gameMode === GameMode.MULTIPLAYER) {
           // In multiplayer, the opponent's paddle position is synchronized directly via WebSocket messages.
           // Maintain physical placement of visual representation.
           aiPaddleGroup.position.set(aiPaddlePos.current.x, aiPaddlePos.current.y, aiPaddlePos.current.z);
-          aiPaddleGroup.rotation.y = (aiPaddlePos.current.x * -0.15) - Math.PI; // Face player
-          aiPaddleGroup.rotation.x = -Math.PI / 16;
         } else {
           // --- AI WORKINGS (HUMAN BEHAVIOR INTELLIGENT ROUTING) ---
           const aiDiff = difficultyConfigRef.current;
@@ -1107,9 +1122,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
           // Apply values to visual mesh
           aiPaddleGroup.position.set(aiPaddlePos.current.x, aiPaddlePos.current.y, aiPaddlePos.current.z);
-          aiPaddleGroup.rotation.y = (aiPaddlePos.current.x * -0.15) - Math.PI; // Face player
-          aiPaddleGroup.rotation.x = -Math.PI / 16; // slightly tilted down forward
         }
+
+        // Calculate actual opponent paddle velocity
+        aiPaddleVel.current.x = (aiPaddlePos.current.x - prevAiX) / Math.max(0.001, dt);
+        aiPaddleVel.current.y = (aiPaddlePos.current.y - prevAiY) / Math.max(0.001, dt);
+        aiPaddleVel.current.z = (aiPaddlePos.current.z - prevAiZ) / Math.max(0.001, dt);
+
+        // Apply smooth visual rotation for the opponent's paddle (matches player's feeling perfectly!)
+        const targetAiRotY = (aiPaddlePos.current.x * -0.26) - Math.PI + (aiPaddleVel.current.x * -0.018);
+        const targetAiRotX = -Math.PI / 16 + (aiPaddleVel.current.y * 0.012) + (aiPaddlePos.current.y - 0.85) * 0.22;
+        const targetAiRotZ = (aiPaddlePos.current.x * 0.20) + (aiPaddleVel.current.x * 0.02);
+
+        aiPaddleGroup.rotation.y += (targetAiRotY - aiPaddleGroup.rotation.y) * rotLerpSpeed;
+        aiPaddleGroup.rotation.x += (targetAiRotX - aiPaddleGroup.rotation.x) * rotLerpSpeed;
+        aiPaddleGroup.rotation.z += (targetAiRotZ - aiPaddleGroup.rotation.z) * rotLerpSpeed;
 
         // --- HIGH FIDELITY BALL PHYSICAL GRAPHICS ---
         if (ballPhysics.current.isTossed) {
