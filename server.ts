@@ -98,7 +98,8 @@ async function startServer() {
                     data.type === "ball_toss" ||
                     data.type === "score_point" ||
                     data.type === "restart_match" ||
-                    data.type === "reset_rally"
+                    data.type === "reset_rally" ||
+                    data.type === "ball_sync"
                 ) {
                     if (!currentRoomId) return;
                     const room = rooms.get(currentRoomId);
