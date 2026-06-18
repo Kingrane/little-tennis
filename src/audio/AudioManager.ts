@@ -20,7 +20,7 @@ class AudioManager {
     this.enabled = flag;
   }
 
-  // Soft wooden table bounce sound
+  // Real celluloid table tennis ball bounce on wooden table
   public playTableBounce(intensity: number = 0.8) {
     if (!this.enabled) return;
     try {
@@ -28,36 +28,51 @@ class AudioManager {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
 
-      // Base sine osc for wood hollow resonance
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
+      // High frequency plastic shell pop (primary pitch of celluloid ball)
+      const oscShell = this.ctx.createOscillator();
+      const gainShell = this.ctx.createGain();
+      oscShell.type = "sine";
+      oscShell.frequency.setValueAtTime(1150, t);
+      oscShell.frequency.exponentialRampToValueAtTime(800, t + 0.05);
 
-      osc.type = "sine";
-      // Starts around 220Hz, drops to 160Hz quickly
-      osc.frequency.setValueAtTime(220, t);
-      osc.frequency.exponentialRampToValueAtTime(140, t + 0.08);
+      gainShell.gain.setValueAtTime(0, t);
+      gainShell.gain.linearRampToValueAtTime(this.volume * 0.4 * intensity, t + 0.001);
+      gainShell.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
 
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(this.volume * 0.3 * intensity, t + 0.002);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      // Low frequency table-top wood vibration
+      const oscTable = this.ctx.createOscillator();
+      const gainTable = this.ctx.createGain();
+      oscTable.type = "triangle";
+      oscTable.frequency.setValueAtTime(160, t);
+      oscTable.frequency.exponentialRampToValueAtTime(110, t + 0.08);
 
-      // Low-pass filter to keep it woody and soft, not pingy
+      gainTable.gain.setValueAtTime(0, t);
+      gainTable.gain.linearRampToValueAtTime(this.volume * 0.15 * intensity, t + 0.002);
+      gainTable.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+
+      // Bandpass filter to sit nicely in typical ping-pong bounce frequency space
       const filter = this.ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(350, t);
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(1100, t);
+      filter.Q.setValueAtTime(2.0, t);
 
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.ctx.destination);
+      oscShell.connect(filter);
+      filter.connect(gainShell);
+      gainShell.connect(this.ctx.destination);
 
-      osc.start(t);
-      osc.stop(t + 0.15);
+      oscTable.connect(gainTable);
+      gainTable.connect(this.ctx.destination);
+
+      oscShell.start(t);
+      oscShell.stop(t + 0.1);
+      oscTable.start(t);
+      oscTable.stop(t + 0.12);
     } catch (e) {
       console.warn("Audio bounce failed", e);
     }
   }
 
-  // Soft rubber paddle hit sound
+  // Real springy rubber + wood paddle strike sound
   public playPaddleHit(intensity: number = 0.8, isOpponent: boolean = false) {
     if (!this.enabled) return;
     try {
@@ -65,23 +80,22 @@ class AudioManager {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
 
-      // Low freq sine body
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
+      // Primary solid click (the wood blade contact)
+      const oscWood = this.ctx.createOscillator();
+      const gainWood = this.ctx.createGain();
+      oscWood.type = "sine";
+      const startFreq = isOpponent ? 500 : 540;
+      const endFreq = isOpponent ? 320 : 360;
+      oscWood.frequency.setValueAtTime(startFreq, t);
+      oscWood.frequency.exponentialRampToValueAtTime(endFreq, t + 0.04);
 
-      osc.type = "sine";
-      const startFreq = isOpponent ? 280 : 310;
-      const endFreq = isOpponent ? 180 : 210;
-      osc.frequency.setValueAtTime(startFreq, t);
-      osc.frequency.exponentialRampToValueAtTime(endFreq, t + 0.06);
+      gainWood.gain.setValueAtTime(0, t);
+      gainWood.gain.linearRampToValueAtTime(this.volume * 0.5 * intensity, t + 0.001);
+      gainWood.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
 
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(this.volume * 0.45 * intensity, t + 0.002);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-
-      // Add a tiny bit of white noise filter sweep for the rubber friction strike
+      // Rubber click/friction (frequency noise burst)
       const noise = this.ctx.createBufferSource();
-      const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.015, this.ctx.sampleRate);
+      const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.02, this.ctx.sampleRate);
       const output = noiseBuffer.getChannelData(0);
       for (let i = 0; i < noiseBuffer.length; i++) {
         output[i] = Math.random() * 2 - 1;
@@ -89,29 +103,39 @@ class AudioManager {
       noise.buffer = noiseBuffer;
 
       const noiseGain = this.ctx.createGain();
-      noiseGain.gain.setValueAtTime(this.volume * 0.08 * intensity, t);
+      noiseGain.gain.setValueAtTime(this.volume * 0.12 * intensity, t);
       noiseGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.015);
 
       const noiseFilter = this.ctx.createBiquadFilter();
       noiseFilter.type = "bandpass";
-      noiseFilter.frequency.setValueAtTime(1200, t);
-      noiseFilter.Q.setValueAtTime(3, t);
+      noiseFilter.frequency.setValueAtTime(1500, t);
+      noiseFilter.Q.setValueAtTime(3.5, t);
 
       noise.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
       noiseGain.connect(this.ctx.destination);
 
-      // Low pass on the main osc
-      const bodyFilter = this.ctx.createBiquadFilter();
-      bodyFilter.type = "lowpass";
-      bodyFilter.frequency.setValueAtTime(800, t);
+      // Low frequency body vibration of the paddle handle
+      const oscBody = this.ctx.createOscillator();
+      const gainBody = this.ctx.createGain();
+      oscBody.type = "triangle";
+      oscBody.frequency.setValueAtTime(130, t);
+      oscBody.frequency.exponentialRampToValueAtTime(80, t + 0.07);
 
-      osc.connect(bodyFilter);
-      bodyFilter.connect(gain);
-      gain.connect(this.ctx.destination);
+      gainBody.gain.setValueAtTime(0, t);
+      gainBody.gain.linearRampToValueAtTime(this.volume * 0.25 * intensity, t + 0.002);
+      gainBody.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
 
-      osc.start(t);
-      osc.stop(t + 0.12);
+      oscWood.connect(gainWood);
+      gainWood.connect(this.ctx.destination);
+
+      oscBody.connect(gainBody);
+      gainBody.connect(this.ctx.destination);
+
+      oscWood.start(t);
+      oscWood.stop(t + 0.08);
+      oscBody.start(t);
+      oscBody.stop(t + 0.1);
       noise.start(t);
     } catch (e) {
       console.warn("Audio hit failed", e);
