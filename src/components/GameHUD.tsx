@@ -107,16 +107,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       </div>
 
-      {/* 2. Middle area: Point / Stroke statuses with elegant floating text indicators */}
-      <div className="self-center flex flex-col items-center gap-2.5 scale-90 sm:scale-100 mt-20">
-        <div className="px-5 py-2 bg-white/80 backdrop-blur-md border border-white rounded-full text-[10px] uppercase tracking-widest shadow-sm font-semibold text-[#4A433F]">
+      {/* 2. Status text area: beautifully placed near the top, just below the scoreboard and out of the way of the high-speed ball! */}
+      <div className="absolute top-[124px] left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 scale-90 sm:scale-100 z-10 w-[90%] max-w-md">
+        <div className="px-5 py-2 bg-white/80 backdrop-blur-md border border-white/60 rounded-full text-[10px] uppercase tracking-widest shadow-xs font-semibold text-[#4A433F] text-center w-max">
           {statusText}
         </div>
 
         {serviceStatus !== ServiceStatus.NONE && !isPaused && (
-          <div className="text-[9px] tracking-[0.25em] font-semibold text-[#8C847E] bg-white/10 px-3 py-1 rounded-full backdrop-blur-xs animate-pulse">
-            {serviceStatus === ServiceStatus.PLAYER_SERVE 
-              ? "TOSS HIGH: CLICK TO THROW, CLICK AGAIN TO STRIKE" 
+          <div className="text-[9px] tracking-[0.25em] font-semibold text-[#8C847E] bg-white/20 border border-white/10 px-4 py-1.5 rounded-full backdrop-blur-xs animate-pulse text-center w-max">
+            {serviceStatus === ServiceStatus.PLAYER_SERVE
+              ? "TOSS HIGH: CLICK TO THROW, CLICK AGAIN TO STRIKE"
               : "WATCH THE BOT'S ANGLE CLOSELY"}
           </div>
         )}

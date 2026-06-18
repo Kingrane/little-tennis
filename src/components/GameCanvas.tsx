@@ -58,6 +58,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [difficulty]);
 
   // Core physical/state variables
+  const isMouseDown = useRef(false);
+  const lastTossTime = useRef(0);
+  const lastTableBounceTime = useRef(0);
+  const hasFiredServe = useRef(false);
+
   const rallyState = useRef({
     scorePlayer: score.player,
     scoreOpponent: score.opponent,
@@ -146,6 +151,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     rallyState.current.rallyBounces = 0;
     rallyState.current.awaitingServeTuck = true;
     rallyState.current.isScorePending = false;
+    lastTableBounceTime.current = 0;
+    hasFiredServe.current = false;
 
     if (server === "PLAYER") {
       ballPhysics.current.position.set(0, 0.82 + 0.12, -1.35);
@@ -614,39 +621,43 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const createPaddleMesh = (colorHex: string) => {
       const g = new THREE.Group();
 
-      // Blade disk
-      const faceGeo = new THREE.CylinderGeometry(0.082, 0.082, 0.012, 40);
+      // 1. Central Wood Core Disk (Professional blade base)
+      const coreGeo = new THREE.CylinderGeometry(0.084, 0.084, 0.008, 40);
+      const woodMat = new THREE.MeshStandardMaterial({
+        color: "#d8c3a5", // Natural light brown wood color
+        roughness: 0.7,
+      });
+      const core = new THREE.Mesh(coreGeo, woodMat);
+      core.rotation.x = Math.PI / 2;
+      core.castShadow = true;
+      g.add(core);
+
+      // 2. Back rubber facing the camera/player (customized chosen style color)
+      const faceGeo = new THREE.CylinderGeometry(0.082, 0.082, 0.002, 40);
       const rubberMat = new THREE.MeshStandardMaterial({
         color: colorHex,
         roughness: 0.45,
         metalness: 0.05,
       });
-      const spongeMat = new THREE.MeshStandardMaterial({
-        color: "#ffffff",
-        roughness: 0.5,
-      });
-
       const blade = new THREE.Mesh(faceGeo, rubberMat);
+      blade.name = "rubberFace";
+      blade.position.set(0, 0, -0.005); // closer to camera (negative Z), so the player sees this side
       blade.rotation.x = Math.PI / 2;
       blade.castShadow = true;
       g.add(blade);
 
-      // Wooden handle
+      // 3. Wooden handle
       const handleGeo = new THREE.BoxGeometry(0.016, 0.07, 0.014);
-      const woodMat = new THREE.MeshStandardMaterial({
-        color: "#d8c3a5",
-        roughness: 0.7,
-      });
       const handle = new THREE.Mesh(handleGeo, woodMat);
       handle.position.set(0, -0.11, 0);
       handle.castShadow = true;
       g.add(handle);
 
-      // Back side rubber (opposite color matching)
+      // 4. Front rubber facing the table/opponent (always professional solid black rubber)
       const backGeo = new THREE.CylinderGeometry(0.082, 0.082, 0.002, 32);
       const blackRubber = new THREE.MeshStandardMaterial({ color: "#222222", roughness: 0.5 });
       const backBlade = new THREE.Mesh(backGeo, blackRubber);
-      backBlade.position.set(0, 0, -0.007);
+      backBlade.position.set(0, 0, 0.005); // facing positive Z (towards opponent table side)
       backBlade.rotation.x = Math.PI / 2;
       g.add(backBlade);
 
@@ -697,6 +708,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Toss / Hit trigger
     const handleTouchStart = (e: TouchEvent) => {
+      isMouseDown.current = true;
       if (e.touches.length > 0) {
         const touch = e.touches[0];
         if (!canvasRef.current) return;
@@ -726,6 +738,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     };
 
+    const handleTouchEnd = () => {
+      isMouseDown.current = false;
+    };
+
+    const handleMouseDown = () => {
+      isMouseDown.current = true;
+    };
+
+    const handleMouseUp = () => {
+      isMouseDown.current = false;
+    };
+
     const handleMouseClick = () => {
       if (isPaused || gameMode === GameMode.MENU) return;
 
@@ -735,6 +759,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         !ballPhysics.current.isTossed
       ) {
         ballPhysics.current.isTossed = true;
+        lastTossTime.current = performance.now();
         ballPhysics.current.velocity.set(0, 4.0, 0); // throw straight upwards
         onStatusUpdate("BALL TOSSED — SWIPE OR CLICK TO SERVE!");
         audioManager.playTableBounce(0.3); // tiny toss sound
@@ -742,20 +767,36 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE &&
         ballPhysics.current.isTossed
       ) {
+        // Cooldown for 250ms after tossing to prevent double click fast triggers
+        if (performance.now() - lastTossTime.current < 250) return;
+
         // Quality of life: If they click *while the ball is tossed*, execute a clean automatic serve
         const xDiff = ballPhysics.current.position.x - playerPaddlePos.current.x;
         const yDiff = ballPhysics.current.position.y - playerPaddlePos.current.y;
         const distance2D = Math.sqrt(xDiff * xDiff + yDiff * yDiff);
 
-        // If paddle is reasonably near the tossed ball, trigger a safe elegant serve
-        if (distance2D < 0.32) {
+        // If paddle is reasonably near the tossed ball, trigger a safe elegant legal serve
+        if (distance2D < 0.32 && !hasFiredServe.current) {
+          const ballY = ballPhysics.current.position.y;
+          const ballZ = ballPhysics.current.position.z;
+
+          // Advanced physics serve calculator: ensures ball bounces on player court and ALWAYS clears net beautifully
+          const targetBounceZ = -0.72; // lands safely in the middle-back of our side
+          const outVelZ = 4.6; // perfect forward speed to bounce and glide over the net
+          const t = (targetBounceZ - ballZ) / outVelZ;
+          const yTarget = TABLE_DIMENSIONS.height + ballPhysics.current.radius;
+
+          let outVelY = (yTarget - ballY + 4.905 * t * t) / t;
+          outVelY = Math.max(-2.4, Math.min(-1.7, outVelY)); // perfectly tuned legal limit for robust bounce and clearance
+
           ballPhysics.current.velocity.set(
-            (Math.random() - 0.5) * 0.8, // slight horizontal angle
-            2.3,                        // clean upward arc clearing the net
-            5.2                         // solid forward speed
+            (Math.random() - 0.5) * 0.4, // slight horizontal angle
+            outVelY,                      // computed perfect downward dip
+            outVelZ                       // computed perfect speed
           );
           ballPhysics.current.spin.set(15, 0, 0); // nice slight topspin
 
+          hasFiredServe.current = true;
           rallyState.current.lastStriker = "PLAYER";
           rallyState.current.bouncesOnTable = 0;
           rallyState.current.bouncesPlayerCourt = 0;
@@ -772,6 +813,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("touchstart", handleTouchStart);
     window.addEventListener("touchmove", handleTouchMove);
+    window.addEventListener("touchend", handleTouchEnd);
+    window.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mouseup", handleMouseUp);
     window.addEventListener("click", handleMouseClick);
 
     // 11. Animation frame rate loop (144fps capped by browser requestAnimationFrame)
@@ -814,9 +858,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         humanPaddleGroup.rotation.y = (playerPaddleVel.current.x * 0.02) + (mouse.current.x * 0.2); // Face target
         humanPaddleGroup.rotation.x = Math.PI / 16 + (playerPaddleVel.current.y * -0.015); // Tilt up or down
 
-        // Update selected color matching
+        // Update selected color matching (only for the front rubber face mesh)
         humanPaddleGroup.children.forEach((child) => {
-          if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+          if (child.name === "rubberFace" && child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
             if (child.material.color.getHexString() !== paddleConfigRef.current.color.replace("#", "").toLowerCase()) {
               // Quick update on run-time selections
               child.material.color.set(paddleConfigRef.current.color);
@@ -967,83 +1011,88 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           // The ball contacts the table surface at Y = 0.76 (incorporate visual spherical radius)
           if (isAboveTable && ballPhysics.current.position.y <= TABLE_DIMENSIONS.height + ballPhysics.current.radius) {
             if (ballPhysics.current.velocity.y < 0) {
-              // Physical bounce bounce trigger!
-              ballPhysics.current.position.y = TABLE_DIMENSIONS.height + ballPhysics.current.radius;
-              ballPhysics.current.velocity.y = -ballPhysics.current.velocity.y * ballPhysics.current.elasticityTable;
+              const now = performance.now();
+              if (now - lastTableBounceTime.current >= 120) {
+                lastTableBounceTime.current = now;
 
-              // --- SPIN FORCE TRANSFERS ON CONTACTS ---
-              // Spin vectors modify velocities on bounce. Topspin (X spin) accelerates forwards (Z).
-              // Sidespin (Y spin) throws left/right (X).
-              const frictionFactor = 0.08;
-              ballPhysics.current.velocity.z += ballPhysics.current.spin.x * ballPhysics.current.radius * frictionFactor;
-              ballPhysics.current.velocity.x += ballPhysics.current.spin.y * ballPhysics.current.radius * frictionFactor;
+                // Physical bounce bounce trigger!
+                ballPhysics.current.position.y = TABLE_DIMENSIONS.height + ballPhysics.current.radius;
+                ballPhysics.current.velocity.y = -ballPhysics.current.velocity.y * ballPhysics.current.elasticityTable;
 
-              // Contact friction decays ball rotational speed
-              ballPhysics.current.spin.multiplyScalar(0.70);
+                // --- SPIN FORCE TRANSFERS ON CONTACTS ---
+                // Spin vectors modify velocities on bounce. Topspin (X spin) accelerates forwards (Z).
+                // Sidespin (Y spin) throws left/right (X).
+                const frictionFactor = 0.08;
+                ballPhysics.current.velocity.z += ballPhysics.current.spin.x * ballPhysics.current.radius * frictionFactor;
+                ballPhysics.current.velocity.x += ballPhysics.current.spin.y * ballPhysics.current.radius * frictionFactor;
 
-              // Sound ping synth
-              const intensity = Math.min(1.0, Math.max(0.1, Math.abs(ballPhysics.current.velocity.y) / 3));
-              audioManager.playTableBounce(intensity);
-              triggerPulseRing(ballPhysics.current.position, 0xefdcc9);
+                // Contact friction decays ball rotational speed
+                ballPhysics.current.spin.multiplyScalar(0.70);
 
-              rallyState.current.bouncesOnTable++;
+                // Sound ping synth
+                const intensity = Math.min(1.0, Math.max(0.1, Math.abs(ballPhysics.current.velocity.y) / 3));
+                audioManager.playTableBounce(intensity);
+                triggerPulseRing(ballPhysics.current.position, 0xefdcc9);
 
-              // Check division of bounds
-              // Player court is Z < 0. Opponent court is Z > 0.
-              const isPlayerCourtSide = ballPhysics.current.position.z < 0;
+                rallyState.current.bouncesOnTable++;
 
-              if (isPlayerCourtSide) {
-                rallyState.current.bouncesPlayerCourt++;
-                rallyState.current.rallyBounces++;
+                // Check division of bounds
+                // Player court is Z < 0. Opponent court is Z > 0.
+                const isPlayerCourtSide = ballPhysics.current.position.z < 0;
 
-                // Game rules details checking
-                if (rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE) {
-                  if (!rallyState.current.servedFirstBounceSelf) {
-                    rallyState.current.servedFirstBounceSelf = true;
+                if (isPlayerCourtSide) {
+                  rallyState.current.bouncesPlayerCourt++;
+                  rallyState.current.rallyBounces++;
+
+                  // Game rules details checking
+                  if (rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE) {
+                    if (!rallyState.current.servedFirstBounceSelf) {
+                      rallyState.current.servedFirstBounceSelf = true;
+                    } else {
+                      // Double bounce on players side during player serve!
+                      scorePoint("OPPONENT", "BALL BOUNCED TWICE ON YOUR COURT");
+                    }
+                  } else if (rallyState.current.serveStatus === ServiceStatus.OPPONENT_SERVE) {
+                    if (rallyState.current.servedFirstBounceSelf) {
+                      // It had already bounced on Opponent side and now bounced on yours. This is correct serving!
+                      rallyState.current.servedFirstBounceOpponent = true;
+                      rallyState.current.serveStatus = ServiceStatus.NONE; // Rally is fully in play now!
+                    } else {
+                      // Serve hit player court directly without bouncing on AI side!
+                      scorePoint("PLAYER", "AI SERVE FAILED TO BOUNCE ON ITS COURT ONLY");
+                    }
                   } else {
-                    // Double bounce on players side during player serve!
-                    scorePoint("OPPONENT", "BALL BOUNCED TWICE ON YOUR COURT");
-                  }
-                } else if (rallyState.current.serveStatus === ServiceStatus.OPPONENT_SERVE) {
-                  if (rallyState.current.servedFirstBounceSelf) {
-                    // It had already bounced on Opponent side and now bounced on yours. This is correct serving!
-                    rallyState.current.servedFirstBounceOpponent = true;
-                    rallyState.current.serveStatus = ServiceStatus.NONE; // Rally is fully in play now!
-                  } else {
-                    // Serve hit player court directly without bouncing on AI side!
-                    scorePoint("PLAYER", "AI SERVE FAILED TO BOUNCE ON ITS COURT ONLY");
+                    // Normal play rally. If bounces on player side exceeding 1
+                    if (rallyState.current.bouncesPlayerCourt > 1) {
+                      scorePoint("OPPONENT", "BALL BOUNCED TWICE ON YOUR COURT");
+                    }
                   }
                 } else {
-                  // Normal play rally. If bounces on player side exceeding 1
-                  if (rallyState.current.bouncesPlayerCourt > 1) {
-                    scorePoint("OPPONENT", "BALL BOUNCED TWICE ON YOUR COURT");
-                  }
-                }
-              } else {
-                // Opponent court (Z > 0)
-                rallyState.current.bouncesOpponentCourt++;
-                rallyState.current.rallyBounces++;
+                  // Opponent court (Z > 0)
+                  rallyState.current.bouncesOpponentCourt++;
+                  rallyState.current.rallyBounces++;
 
-                if (rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE) {
-                  if (rallyState.current.servedFirstBounceSelf) {
-                    // Ball served correctly. Now bounced on opponent side
-                    rallyState.current.servedFirstBounceOpponent = true;
-                    rallyState.current.serveStatus = ServiceStatus.NONE; // rally active
+                  if (rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE) {
+                    if (rallyState.current.servedFirstBounceSelf) {
+                      // Ball served correctly. Now bounced on opponent side
+                      rallyState.current.servedFirstBounceOpponent = true;
+                      rallyState.current.serveStatus = ServiceStatus.NONE; // rally active
+                    } else {
+                      // Served directly to opponent court without bouncing on player side first!
+                      scorePoint("OPPONENT", "YOUR SERVE MUST BOUNCE ON YOUR COURT FIRST");
+                    }
+                  } else if (rallyState.current.serveStatus === ServiceStatus.OPPONENT_SERVE) {
+                    if (!rallyState.current.servedFirstBounceSelf) {
+                      rallyState.current.servedFirstBounceSelf = true;
+                    } else {
+                      // Double bounce on AI court on its serve
+                      scorePoint("PLAYER", "AI SERVE BOUNCED TWICE ON AI COURT");
+                    }
                   } else {
-                    // Served directly to opponent court without bouncing on player side first!
-                    scorePoint("OPPONENT", "YOUR SERVE MUST BOUNCE ON YOUR COURT FIRST");
-                  }
-                } else if (rallyState.current.serveStatus === ServiceStatus.OPPONENT_SERVE) {
-                  if (!rallyState.current.servedFirstBounceSelf) {
-                    rallyState.current.servedFirstBounceSelf = true;
-                  } else {
-                    // Double bounce on AI court on its serve
-                    scorePoint("PLAYER", "AI SERVE BOUNCED TWICE ON AI COURT");
-                  }
-                } else {
-                  // Normal play rally
-                  if (rallyState.current.bouncesOpponentCourt > 1) {
-                    scorePoint("PLAYER", "BALL BOUNCED TWICE ON AI COURT");
+                    // Normal play rally
+                    if (rallyState.current.bouncesOpponentCourt > 1) {
+                      scorePoint("PLAYER", "BALL BOUNCED TWICE ON AI COURT");
+                    }
                   }
                 }
               }
@@ -1092,14 +1141,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           const userZ = playerPaddlePos.current.z;
 
           // Detect pass-by threshold
-          // On player serve, require the tossed ball to have lost its upward momentum (velocity.y < 1.8) before a manual hit triggers.
+          // On player serve, require the tossed ball to have lost its momentum AND respected the toss cooldown (250ms) before hitting
           if (
             ballZ < -1.1 &&
             ballZ >= -1.6 &&
             (ballPhysics.current.velocity.z < 0 ||
               (rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE &&
                 ballPhysics.current.velocity.z <= 0.01 &&
-                ballPhysics.current.velocity.y < 1.8))
+                ballPhysics.current.velocity.y < 1.8 &&
+                performance.now() - lastTossTime.current > 250))
           ) {
             // Check radial proximity of ball to user paddle center
             const xDiff = ballPhysics.current.position.x - playerPaddlePos.current.x;
@@ -1137,10 +1187,30 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
               let outVelY = baseLift + contactLiftVec + swipeLiftVec;
 
-              // If swinging aggressively downwards, allow a low drive/smash (down to 1.0),
-              // otherwise maintain a beautiful secure arc (minimum 1.7) to clear the net.
-              const minAllowedY = playerPaddleVel.current.y < -1.0 ? 1.0 : 1.7;
-              outVelY = Math.max(minAllowedY, Math.min(6.5, outVelY));
+              // IF HOLDING CLICK during serve: hit ball downwards so it bounces on player court first (ideal for manual serve!)
+              // We only allow this when serveStatus is PLAYER_SERVE and they haven't fired the serve yet,
+              // so holding click has zero weird side effects on normal active rallies or subsequent hits!
+              if (isMouseDown.current && rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE && !hasFiredServe.current) {
+                // Advanced physics serve calculator: calculates precise downward angle based on height hit
+                const ballY = ballPhysics.current.position.y;
+                const ballZ = ballPhysics.current.position.z;
+
+                const targetBounceZ = -0.72; // lands safely in the middle-back of our side
+                const outVelZ_computed = 4.6; // perfect forward speed to bounce and glide over the net nicely
+                const t = (targetBounceZ - ballZ) / outVelZ_computed;
+                const yTarget = TABLE_DIMENSIONS.height + ballPhysics.current.radius;
+
+                outVelY = (yTarget - ballY + 4.905 * t * t) / t;
+                outVelY = Math.max(-2.4, Math.min(-1.7, outVelY)); // perfectly tuned legal limit for robust bounce and clearance
+
+                outVelZ = outVelZ_computed;
+                hasFiredServe.current = true;
+              } else {
+                // If swinging aggressively downwards, allow a low drive/smash (down to 1.0),
+                // otherwise maintain a beautiful secure arc (minimum 1.7) to clear the net.
+                const minAllowedY = playerPaddleVel.current.y < -1.0 ? 1.0 : 1.7;
+                outVelY = Math.max(minAllowedY, Math.min(6.5, outVelY));
+              }
 
               ballPhysics.current.velocity.set(outVelX, outVelY, outVelZ);
 
@@ -1161,6 +1231,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
               // Manage game stats on hit
               rallyState.current.lastStriker = "PLAYER";
+              hasFiredServe.current = true;
               rallyState.current.bouncesOnTable = 0;
               rallyState.current.bouncesPlayerCourt = 0;
               rallyState.current.bouncesOpponentCourt = 0;
@@ -1386,6 +1457,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mouseup", handleMouseUp);
       window.removeEventListener("click", handleMouseClick);
       resizeObserver.disconnect();
 

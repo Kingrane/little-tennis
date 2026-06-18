@@ -5,7 +5,7 @@ export const TABLE_DIMENSIONS = {
   width: 1.525, // in meters (X)
   height: 0.76, // table height from ground (Y)
   netHeight: 0.1525, // net height (Y from table surface)
-  netWidth: 1.525 * 1.1, // Net extends slightly over the sides
+  netWidth: 1.525 * 1, // Net extends slightly over the sides
 };
 
 export const PADDLE_CONFIGS: Record<PaddleType, PaddleConfig> = {
