@@ -438,7 +438,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   // Create pulse visual indicator
   function triggerPulseRing(pos: THREE.Vector3 | { x: number; y: number; z: number }, hexColor: number) {
     if (!sceneRef.current) return;
-    const geo = new THREE.RingGeometry(0.02, 0.22, 32);
+    const geo = new THREE.RingGeometry(0.02, 0.06, 32);
     const mat = new THREE.MeshBasicMaterial({
       color: hexColor,
       side: THREE.DoubleSide,
@@ -1090,11 +1090,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
         // Custom target visual tilt angles:
         // Y-axis facing (yaw) - faces slightly inward towards center of the table based on side and swipe momentum
-        const targetRotY = (playerPaddlePos.current.x * 0.26) + (playerPaddleVel.current.x * 0.018);
+        const targetRotY = (playerPaddlePos.current.x * -0.76) + (playerPaddleVel.current.x * 0.018);
         // X-axis tilting (pitch) - tilts forward or backward depending on height and vertical velocity
-        const targetRotX = (Math.PI / 16) + (playerPaddleVel.current.y * -0.012) + (playerPaddlePos.current.y - 0.85) * -0.22;
+        const targetRotX = (Math.PI / 16) + (playerPaddleVel.current.y * -0.412) + (playerPaddlePos.current.y - 0.85) * -0.22;
         // Z-axis tilting (roll) - tilts left or right based on lateral position and horizontal velocity
-        const targetRotZ = (playerPaddlePos.current.x * -0.20) + (playerPaddleVel.current.x * -0.02);
+        const targetRotZ = (playerPaddlePos.current.x * -0.60) + (playerPaddleVel.current.x * -0.02);
 
         // Constant smooth damping factor for a floating premium premium feel
         const rotLerpSpeed = 0.12;
