@@ -1,177 +1,282 @@
-import { Howl } from 'howler'
-import { useGameStore } from '@/store/useGameStore'
-
-/**
- * Premium Table Tennis — AudioManager.
- * Synthesized warm sounds via WebAudio (no external audio assets).
- *
- * Voices:
- *  - hit       : paddle strike (sine body + short noise transient)
- *  - bounce    : table bounce (lighter click)
- *  - net       : muted thud
- *  - score     : soft major chord swell
- *  - hover     : UI tick (very short)
- *  - click     : UI confirm
- *
- * All envelopes shaped with exponential ramps for warmth.
- */
-
-type VoiceName = 'hit' | 'bounce' | 'net' | 'score' | 'hover' | 'click'
-
 class AudioManager {
-  private ctx: AudioContext | null = null
-  private master: GainNode | null = null
-  private noiseBuffer: AudioBuffer | null = null
-  private started = false
+  private ctx: AudioContext | null = null;
+  private volume: number = 0.6;
+  private enabled: boolean = true;
 
-  /** Must be called from a user gesture (Enter / click). */
-  async init(): Promise<void> {
-    if (this.started) return
-    const Ctx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext
-    if (!Ctx) return
-
-    this.ctx = new Ctx()
-    this.master = this.ctx.createGain()
-    this.master.gain.value = useGameStore.getState().settings.masterVolume
-    this.master.connect(this.ctx.destination)
-
-    // Pre-render a short white-noise buffer for transients.
-    const len = this.ctx.sampleRate * 0.4
-    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate)
-    const data = buf.getChannelData(0)
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1
-    this.noiseBuffer = buf
-
-    // Keep master gain in sync with settings.
-    useGameStore.subscribe((s) => {
-      if (this.master) this.master.gain.value = s.settings.masterVolume
-    })
-
-    this.started = true
-    useGameStore.getState().setAudioReady(true)
-
-    // Warm-up: resume if suspended.
-    if (this.ctx.state === 'suspended') await this.ctx.resume()
+  private initCtx() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (this.ctx.state === "suspended") {
+      this.ctx.resume();
+    }
   }
 
-  get ready(): boolean {
-    return this.started && this.ctx?.state === 'running'
+  public setVolume(v: number) {
+    this.volume = Math.max(0, Math.min(1, v));
   }
 
-  /* ---------------- synthesis primitives ---------------- */
-
-  private now(): number {
-    return this.ctx ? this.ctx.currentTime : 0
+  public setEnabled(flag: boolean) {
+    this.enabled = flag;
   }
 
-  private tone(
-    freq: number,
-    dur: number,
-    type: OscillatorType,
-    gain: number,
-    attack = 0.004,
-    detune = 0,
-    dest?: AudioNode,
-  ): void {
-    if (!this.ctx || !this.master) return
-    const ctx = this.ctx
-    const osc = ctx.createOscillator()
-    const g = ctx.createGain()
-    osc.type = type
-    osc.frequency.value = freq
-    osc.detune.value = detune
-    const t0 = this.now()
-    g.gain.setValueAtTime(0.0001, t0)
-    g.gain.exponentialRampToValueAtTime(gain, t0 + attack)
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
-    osc.connect(g)
-    g.connect(dest ?? this.master)
-    osc.start(t0)
-    osc.stop(t0 + dur + 0.02)
+  // Soft wooden table bounce sound
+  public playTableBounce(intensity: number = 0.8) {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+
+      // Base sine osc for wood hollow resonance
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = "sine";
+      // Starts around 220Hz, drops to 160Hz quickly
+      osc.frequency.setValueAtTime(220, t);
+      osc.frequency.exponentialRampToValueAtTime(140, t + 0.08);
+
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(this.volume * 0.3 * intensity, t + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+
+      // Low-pass filter to keep it woody and soft, not pingy
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(350, t);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.15);
+    } catch (e) {
+      console.warn("Audio bounce failed", e);
+    }
   }
 
-  private noise(
-    dur: number,
-    gain: number,
-    filterFreq: number,
-    q = 1,
-    attack = 0.002,
-    dest?: AudioNode,
-  ): void {
-    if (!this.ctx || !this.master || !this.noiseBuffer) return
-    const ctx = this.ctx
-    const src = ctx.createBufferSource()
-    src.buffer = this.noiseBuffer
-    src.loop = true
-    const filter = ctx.createBiquadFilter()
-    filter.type = 'bandpass'
-    filter.frequency.value = filterFreq
-    filter.Q.value = q
-    const g = ctx.createGain()
-    const t0 = this.now()
-    g.gain.setValueAtTime(0.0001, t0)
-    g.gain.exponentialRampToValueAtTime(gain, t0 + attack)
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
-    src.connect(filter)
-    filter.connect(g)
-    g.connect(dest ?? this.master)
-    src.start(t0)
-    src.stop(t0 + dur + 0.02)
+  // Soft rubber paddle hit sound
+  public playPaddleHit(intensity: number = 0.8, isOpponent: boolean = false) {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+
+      // Low freq sine body
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = "sine";
+      const startFreq = isOpponent ? 280 : 310;
+      const endFreq = isOpponent ? 180 : 210;
+      osc.frequency.setValueAtTime(startFreq, t);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, t + 0.06);
+
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(this.volume * 0.45 * intensity, t + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+
+      // Add a tiny bit of white noise filter sweep for the rubber friction strike
+      const noise = this.ctx.createBufferSource();
+      const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.015, this.ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < noiseBuffer.length; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+      noise.buffer = noiseBuffer;
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(this.volume * 0.08 * intensity, t);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.015);
+
+      const noiseFilter = this.ctx.createBiquadFilter();
+      noiseFilter.type = "bandpass";
+      noiseFilter.frequency.setValueAtTime(1200, t);
+      noiseFilter.Q.setValueAtTime(3, t);
+
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+
+      // Low pass on the main osc
+      const bodyFilter = this.ctx.createBiquadFilter();
+      bodyFilter.type = "lowpass";
+      bodyFilter.frequency.setValueAtTime(800, t);
+
+      osc.connect(bodyFilter);
+      bodyFilter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.12);
+      noise.start(t);
+    } catch (e) {
+      console.warn("Audio hit failed", e);
+    }
   }
 
-  /* ---------------- public voices ---------------- */
+  // Snare/buzz-like hit on the net
+  public playNetTouch() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
 
-  /** Paddle strike. */
-  hit(power = 1): void {
-    // Warm body — sine sweep down a touch
-    const base = 320 + power * 80
-    this.tone(base, 0.12, 'sine', 0.32 * power, 0.004, 0)
-    this.tone(base * 1.5, 0.09, 'triangle', 0.12 * power, 0.004, 0)
-    // Crisp transient — band-passed noise
-    this.noise(0.04, 0.25 * power, 2200, 1.2)
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(140, t);
+      osc.frequency.linearRampToValueAtTime(90, t + 0.1);
+
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(this.volume * 0.25, t + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+
+      // White noise buzz
+      const noise = this.ctx.createBufferSource();
+      const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.08, this.ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < noiseBuffer.length; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+      noise.buffer = noiseBuffer;
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(this.volume * 0.15, t);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+
+      const flt = this.ctx.createBiquadFilter();
+      flt.type = "bandpass";
+      flt.frequency.setValueAtTime(400, t);
+
+      noise.connect(flt);
+      flt.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.16);
+      noise.start(t);
+    } catch (e) {
+      console.warn("Audio net-touch failed", e);
+    }
   }
 
-  /** Table bounce — lighter, higher click. */
-  bounce(): void {
-    this.tone(880, 0.06, 'sine', 0.22, 0.002, 0)
-    this.tone(1320, 0.05, 'triangle', 0.1, 0.002, 0)
-    this.noise(0.025, 0.12, 3000, 1.6)
+  // Soft high-frequency chimes / zen bell
+  public playScorePoint(forPlayer: boolean = true) {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+      const gain2 = this.ctx.createGain();
+
+      osc1.type = "sine";
+      osc2.type = "sine";
+
+      // Dual notes making a beautiful warm cord (Major 3rd or Perfect 5th)
+      const baseFreq = forPlayer ? 523.25 : 440.0; // C5 (Player score happy) or A4 (Opponent score soft)
+      const secondaryFreq = forPlayer ? 659.25 : 554.37; // E5 or C#5
+
+      osc1.frequency.setValueAtTime(baseFreq, t);
+      osc2.frequency.setValueAtTime(secondaryFreq, t);
+
+      gain1.gain.setValueAtTime(0, t);
+      gain1.gain.linearRampToValueAtTime(this.volume * 0.15, t + 0.02);
+      gain1.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+
+      gain2.gain.setValueAtTime(0, t);
+      gain2.gain.linearRampToValueAtTime(this.volume * 0.12, t + 0.04);
+      gain2.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(1200, t);
+
+      osc1.connect(filter);
+      osc2.connect(filter);
+
+      filter.connect(gain1);
+      filter.connect(gain2);
+
+      gain1.connect(this.ctx.destination);
+      gain2.connect(this.ctx.destination);
+
+      osc1.start(t);
+      osc1.stop(t + 0.9);
+      osc2.start(t);
+      osc2.stop(t + 0.9);
+    } catch (e) {
+      console.warn("Audio score fail", e);
+    }
   }
 
-  /** Net touch — muted thud. */
-  net(): void {
-    this.tone(160, 0.18, 'sine', 0.28, 0.006, 0)
-    this.noise(0.08, 0.1, 600, 0.8)
+  public playMenuHover() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(600, t);
+      osc.frequency.exponentialRampToValueAtTime(450, t + 0.02);
+
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(this.volume * 0.08, t + 0.001);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.04);
+    } catch (e) {
+      // ignore silently since hover triggered very frequently
+    }
   }
 
-  /** Score — soft major chord swell. */
-  score(): void {
-    // C major: C4 E4 G4
-    this.tone(261.63, 0.9, 'sine', 0.16, 0.02, 0)
-    this.tone(329.63, 0.9, 'sine', 0.14, 0.02, 0)
-    this.tone(392.0, 0.9, 'sine', 0.12, 0.02, 0)
-    this.tone(523.25, 1.1, 'sine', 0.08, 0.06, 0)
-  }
+  public playMenuSelect() {
+    if (!this.enabled) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
 
-  /** UI hover — tiny tick. */
-  hover(): void {
-    this.tone(1400, 0.05, 'sine', 0.06, 0.002, 0)
-  }
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
 
-  /** UI confirm click. */
-  click(): void {
-    this.tone(720, 0.08, 'sine', 0.14, 0.003, 0)
-    this.tone(1080, 0.06, 'triangle', 0.08, 0.003, 0)
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(350, t);
+      osc.frequency.exponentialRampToValueAtTime(700, t + 0.08);
+
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(this.volume * 0.16, t + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(t);
+      osc.stop(t + 0.2);
+    } catch (e) {
+      // ignore
+    }
   }
 }
 
-export const audio = new AudioManager()
-export type { VoiceName }
-
-/* Howler placeholder kept for any future streamed UI samples. */
-export function makeHowl(src: string): Howl {
-  return new Howl({ src: [src], volume: 0.7 })
-}
+export const audioManager = new AudioManager();

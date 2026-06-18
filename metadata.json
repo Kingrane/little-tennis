@@ -1,0 +1,6 @@
+{
+  "name": "Premium Minimal Table Tennis",
+  "description": "A highly polished, tactile 3D table tennis game featuring satin-beige aesthetics, physical Magnus spin-drift curves, and adaptive bot difficulties.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
