@@ -111,9 +111,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       }));
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       try {
-        const data = JSON.parse(event.data);
+        let textData = "";
+        if (event.data instanceof Blob) {
+          textData = await event.data.text();
+        } else if (typeof event.data === "string") {
+          textData = event.data;
+        } else {
+          textData = event.data?.toString() || "";
+        }
+
+        const data = JSON.parse(textData);
         if (data.type === "error") {
           setMultiplayerError(data.message);
           ws.close();

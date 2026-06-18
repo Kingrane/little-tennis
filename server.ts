@@ -32,9 +32,10 @@ async function startServer() {
         let currentRoomId: string | null = null;
         let playerId: string | null = null;
 
-        ws.on("message", (message: string) => {
+        ws.on("message", (message: any) => {
             try {
-                const data = JSON.parse(message);
+                const messageStr = message.toString();
+                const data = JSON.parse(messageStr);
 
                 if (data.type === "join") {
                     const { roomId, nickname, paddleType } = data;
@@ -108,7 +109,7 @@ async function startServer() {
                     // Relay physics coordinates/vectors or score mutations to the other player immediately
                     room.players.forEach(p => {
                         if (p.id !== playerId) {
-                            p.ws.send(message);
+                            p.ws.send(messageStr);
                         }
                     });
                 }
