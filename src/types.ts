@@ -2,6 +2,7 @@ export enum GameMode {
   MENU = "MENU",
   PRACTICE = "PRACTICE",
   MATCH = "MATCH",
+  MULTIPLAYER = "MULTIPLAYER",
 }
 
 export enum Difficulty {

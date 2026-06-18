@@ -15,6 +15,11 @@ interface GameCanvasProps {
   score: { player: number; opponent: number };
   onResetScores: () => void;
   gameStateTrigger: number; // Increment to reset rally
+  socket?: WebSocket | null;
+  myRole?: "host" | "guest" | null;
+  myNickname?: string;
+  opponentNickname?: string;
+  opponentPaddleType?: PaddleType | null;
 }
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({
@@ -26,7 +31,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   onSetService,
   isPaused,
   score,
+  onResetScores,
   gameStateTrigger,
+  socket,
+  myRole,
+  myNickname,
+  opponentNickname,
+  opponentPaddleType,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -168,12 +179,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       rallyState.current.serveStatus = ServiceStatus.OPPONENT_SERVE;
       onSetService(ServiceStatus.OPPONENT_SERVE);
 
-      // Programmed delay for Opponent Serve
-      setTimeout(() => {
-        if (rallyState.current.serveStatus === ServiceStatus.OPPONENT_SERVE && !ballPhysics.current.isTossed && gameMode !== GameMode.MENU) {
-          tossOpponentBall();
-        }
-      }, 1500);
+      // Programmed delay for Opponent Serve (Only for Singleplayer Bot!)
+      if (gameMode !== GameMode.MULTIPLAYER) {
+        setTimeout(() => {
+          if (rallyState.current.serveStatus === ServiceStatus.OPPONENT_SERVE && !ballPhysics.current.isTossed && gameMode !== GameMode.MENU) {
+            tossOpponentBall();
+          }
+        }, 1500);
+      } else {
+        onStatusUpdate(`AWAITING ${opponentNickname || "OPPONENT"} SERVE...`);
+      }
     }
   }
 
@@ -233,6 +248,45 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     rallyState.current.serveStatus = ServiceStatus.NONE;
     onSetService(ServiceStatus.NONE);
 
+    if (gameMode === GameMode.MULTIPLAYER) {
+      if (winner === "PLAYER") {
+        const nextScore = rallyState.current.scorePlayer + 1;
+        rallyState.current.scorePlayer = nextScore;
+        audioManager.playScorePoint(true);
+        onScoreUpdate(nextScore, rallyState.current.scoreOpponent);
+        onStatusUpdate(`POINT YOU! — ${reasonText}`);
+      } else {
+        const nextScore = rallyState.current.scoreOpponent + 1;
+        rallyState.current.scoreOpponent = nextScore;
+        audioManager.playScorePoint(false);
+        onScoreUpdate(rallyState.current.scorePlayer, nextScore);
+        onStatusUpdate(`POINT ${opponentNickname || "OPPONENT"}! — ${reasonText}`);
+
+        // Since I'M the one who missed, I must broadcast this point to the opponent!
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: "score_point",
+            winnerRole: myRole === "host" ? "guest" : "host",
+            reason: reasonText,
+          }));
+        }
+      }
+
+      // Schedule reset ball after 2s
+      setTimeout(() => {
+        if (gameMode !== GameMode.MULTIPLAYER) return;
+        const totalPoints = rallyState.current.scorePlayer + rallyState.current.scoreOpponent;
+        const playerServes = Math.floor(totalPoints / 2) % 2 === 0;
+
+        // In multiplayer, the 'host' behaves as 'PLAYER' serves if playerServes is true.
+        // The 'guest' behaves as 'PLAYER' serves if playerServes is false.
+        const amIServing = myRole === "host" ? playerServes : !playerServes;
+        resetBall(amIServing ? "PLAYER" : "OPPONENT");
+      }, 2000);
+
+      return;
+    }
+
     if (winner === "PLAYER") {
       const nextScore = rallyState.current.scorePlayer + 1;
       rallyState.current.scorePlayer = nextScore;
@@ -261,6 +315,66 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
     }, 2000);
   }
+
+  // --- MULTIPLAYER WEBSOCKET SIGNAL SYNC ---
+  useEffect(() => {
+    if (!socket || gameMode !== GameMode.MULTIPLAYER) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "paddle_move") {
+          // Mirror opponent's movement
+          aiPaddlePos.current.x = -data.x;
+          aiPaddlePos.current.y = data.y;
+          aiPaddlePos.current.z = -data.z;
+        } else if (data.type === "ball_toss") {
+          ballPhysics.current.isTossed = true;
+          lastTossTime.current = performance.now();
+          // Ball is tossed and mirrored
+          ballPhysics.current.position.set(-data.x || 0, data.y, 1.35);
+          ballPhysics.current.velocity.set(0, data.velocityY || 4.0, 0);
+          onStatusUpdate(`${opponentNickname || "OPPONENT"} TOSSED THE BALL!`);
+          audioManager.playTableBounce(0.35);
+        } else if (data.type === "ball_hit") {
+          // Sync point, mirror X and Z axis
+          ballPhysics.current.position.set(-data.pos[0], data.pos[1], -data.pos[2]);
+          ballPhysics.current.velocity.set(-data.vel[0], data.vel[1], -data.vel[2]);
+          ballPhysics.current.spin.set(data.spin[0], -data.spin[1], data.spin[2]);
+
+          ballPhysics.current.isTossed = true;
+          rallyState.current.isRallyActive = true;
+          hasFiredServe.current = true;
+          rallyState.current.lastStriker = "OPPONENT";
+          rallyState.current.bouncesOnTable = 0;
+          rallyState.current.bouncesPlayerCourt = 0;
+          rallyState.current.bouncesOpponentCourt = 0;
+
+          const speed = Math.sqrt(data.vel[0] ** 2 + data.vel[1] ** 2 + data.vel[2] ** 2);
+          audioManager.playPaddleHit(Math.min(1.0, 0.45 + speed * 0.05), true);
+          triggerPulseRing(aiPaddlePos.current, 0xff7e6b);
+          onStatusUpdate(`${opponentNickname || "OPPONENT"} RETURNED THE BALL!`);
+        } else if (data.type === "score_point") {
+          // Opponent tells us we won!
+          const winnerRole = data.winnerRole;
+          const isMeWinner = winnerRole === myRole;
+          scorePoint(isMeWinner ? "PLAYER" : "OPPONENT", data.reason || "Opponent missed");
+        } else if (data.type === "restart_match") {
+          onResetScores();
+        } else if (data.type === "reset_rally") {
+          resetBall(data.server === myRole ? "PLAYER" : "OPPONENT");
+        }
+      } catch (err) {
+        console.error("Multiplayer message parse error:", err);
+      }
+    };
+
+    socket.addEventListener("message", handleMessage);
+    return () => {
+      socket.removeEventListener("message", handleMessage);
+    };
+  }, [socket, gameMode, myRole, opponentNickname]);
 
   // Create pulse visual indicator
   function triggerPulseRing(pos: THREE.Vector3 | { x: number; y: number; z: number }, hexColor: number) {
@@ -793,6 +907,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ballPhysics.current.velocity.set(0, 4.0, 0); // throw straight upwards
         onStatusUpdate("BALL TOSSED — SWIPE OR CLICK TO SERVE!");
         audioManager.playTableBounce(0.3); // tiny toss sound
+
+        // Broadcast ball toss
+        if (gameMode === GameMode.MULTIPLAYER && socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: "ball_toss",
+            y: ballPhysics.current.position.y,
+            velocityY: 4.0,
+          }));
+        }
       } else if (
         rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE &&
         ballPhysics.current.isTossed
@@ -883,6 +1006,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         playerPaddleVel.current.y = (playerPaddlePos.current.y - prevPlayerPaddlePos.current.y) / Math.max(0.001, dt);
         playerPaddleVel.current.z = (playerPaddlePos.current.z - prevPlayerPaddlePos.current.z) / Math.max(0.001, dt);
 
+        // Stream multiplayer paddle positions
+        if (gameMode === GameMode.MULTIPLAYER && socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: "paddle_move",
+            x: playerPaddlePos.current.x,
+            y: playerPaddlePos.current.y,
+            z: playerPaddlePos.current.z,
+          }));
+        }
+
         // Apply visual rotation based on sweeping direction (tilting looks AMAZING)
         humanPaddleGroup.position.set(playerPaddlePos.current.x, playerPaddlePos.current.y, playerPaddlePos.current.z);
         humanPaddleGroup.rotation.y = (playerPaddleVel.current.x * 0.02) + (mouse.current.x * 0.2); // Face target
@@ -898,76 +1031,85 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           }
         });
 
-        // --- AI WORKINGS (HUMAN BEHAVIOR INTELLIGENT ROUTING) ---
-        const aiDiff = difficultyConfigRef.current;
+        // --- AI WORKINGS or MULTIPLAYER COORDINATES TRIGGER ---
+        if (gameMode === GameMode.MULTIPLAYER) {
+          // In multiplayer, the opponent's paddle position is synchronized directly via WebSocket messages.
+          // Maintain physical placement of visual representation.
+          aiPaddleGroup.position.set(aiPaddlePos.current.x, aiPaddlePos.current.y, aiPaddlePos.current.z);
+          aiPaddleGroup.rotation.y = (aiPaddlePos.current.x * -0.15) - Math.PI; // Face player
+          aiPaddleGroup.rotation.x = -Math.PI / 16;
+        } else {
+          // --- AI WORKINGS (HUMAN BEHAVIOR INTELLIGENT ROUTING) ---
+          const aiDiff = difficultyConfigRef.current;
 
-        // Gather ball history to mock reaction delays
-        aiDelayBuffer.current.push({
-          time: currentTime,
-          x: ballPhysics.current.position.x,
-          y: ballPhysics.current.position.y,
-          z: ballPhysics.current.position.z,
-        });
+          // Gather ball history to mock reaction delays
+          aiDelayBuffer.current.push({
+            time: currentTime,
+            x: ballPhysics.current.position.x,
+            y: ballPhysics.current.position.y,
+            z: ballPhysics.current.position.z,
+          });
 
-        // Purge old values
-        const reactionTimeMs = aiDiff.reactionTime * 1000;
-        while (aiDelayBuffer.current.length > 1 && (currentTime - aiDelayBuffer.current[0].time) > reactionTimeMs) {
-          aiDelayBuffer.current.shift();
-        }
-
-        // AI tracks the delayed ball position
-        const trackedBall = aiDelayBuffer.current[0] || ballPhysics.current.position;
-
-        // AI positioning target: Z-depth resides at +1.45m mostly
-        aiPaddleTarget.current.z = 1.45;
-
-        // Anticipated hit spot. If the ball is moving towards the AI side (positive velocity)
-        if (ballPhysics.current.velocity.z > 0.0) {
-          // Pre-solve linear tracking target based on velocity towards the baseline
-          const zDistance = 1.45 - ballPhysics.current.position.z;
-          const interceptTime = Math.max(0.01, zDistance / ballPhysics.current.velocity.z);
-
-          // Projected crossing coordinates
-          let targetX = ballPhysics.current.position.x + ballPhysics.current.velocity.x * interceptTime;
-          let targetY = ballPhysics.current.position.y + ballPhysics.current.velocity.y * interceptTime;
-
-          // Cap target calculations so AI doesn't run infinitely off table
-          targetX = Math.max(-TABLE_DIMENSIONS.width * 0.65, Math.min(TABLE_DIMENSIONS.width * 0.65, targetX));
-          targetY = Math.max(TABLE_DIMENSIONS.height + 0.05, Math.min(TABLE_DIMENSIONS.height + 0.45, targetY));
-
-          // Introduce AI error rates to Rookie / Casual
-          if (Math.random() < aiDiff.errorRate * 0.02) {
-            targetX += (Math.random() - 0.5) * 0.35;
-            targetY += (Math.random() - 0.5) * 0.2;
+          // Purge old values
+          const reactionTimeMs = aiDiff.reactionTime * 1000;
+          while (aiDelayBuffer.current.length > 1 && (currentTime - aiDelayBuffer.current[0].time) > reactionTimeMs) {
+            aiDelayBuffer.current.shift();
           }
 
-          aiPaddleTarget.current.x = targetX;
-          aiPaddleTarget.current.y = targetY;
-        } else {
-          // Soft return to center court when waiting passively
-          aiPaddleTarget.current.x += (0.0 - aiPaddleTarget.current.x) * 0.06;
-          aiPaddleTarget.current.y += (0.76 + 0.15 - aiPaddleTarget.current.y) * 0.06;
+          // AI tracks the delayed ball position
+          const trackedBall = aiDelayBuffer.current[0] || ballPhysics.current.position;
+
+          // AI positioning target: Z-depth resides at +1.45m mostly
+          aiPaddleTarget.current.z = 1.45;
+
+          // Anticipated hit spot. If the ball is moving towards the AI side (positive velocity)
+          if (ballPhysics.current.velocity.z > 0.0) {
+            // Pre-solve linear tracking target based on velocity towards the baseline
+            const zDistance = 1.45 - ballPhysics.current.position.z;
+            const interceptTime = Math.max(0.01, zDistance / ballPhysics.current.velocity.z);
+
+            // Projected crossing coordinates
+            let targetX = ballPhysics.current.position.x + ballPhysics.current.velocity.x * interceptTime;
+            let targetY = ballPhysics.current.position.y + ballPhysics.current.velocity.y * interceptTime;
+
+            // Cap target calculations so AI doesn't run infinitely off table
+            targetX = Math.max(-TABLE_DIMENSIONS.width * 0.65, Math.min(TABLE_DIMENSIONS.width * 0.65, targetX));
+            targetY = Math.max(TABLE_DIMENSIONS.height + 0.05, Math.min(TABLE_DIMENSIONS.height + 0.45, targetY));
+
+            // Introduce AI error rates to Rookie / Casual
+            if (Math.random() < aiDiff.errorRate * 0.02) {
+              targetX += (Math.random() - 0.5) * 0.35;
+              targetY += (Math.random() - 0.5) * 0.2;
+            }
+
+            aiPaddleTarget.current.x = targetX;
+            aiPaddleTarget.current.y = targetY;
+          } else {
+            // Soft return to center court when waiting passively
+            aiPaddleTarget.current.x += (0.0 - aiPaddleTarget.current.x) * 0.06;
+            aiPaddleTarget.current.y += (0.76 + 0.15 - aiPaddleTarget.current.y) * 0.06;
+          }
+
+          // Interpolate AI physical movement speeds according to difficulty limits
+          const maxDist = aiDiff.speedLimit * dt;
+          const dx = aiPaddleTarget.current.x - aiPaddlePos.current.x;
+          const dy = aiPaddleTarget.current.y - aiPaddlePos.current.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist > maxDist && dist > 0.001) {
+            aiPaddlePos.current.x += (dx / dist) * maxDist;
+            aiPaddlePos.current.y += (dy / dist) * maxDist;
+          } else {
+            aiPaddlePos.current.x += dx * 0.2;
+            aiPaddlePos.current.y += dy * 0.2;
+          }
+          aiPaddlePos.current.z = 1.45;
+
+          // Apply values to visual mesh
+          aiPaddleGroup.position.set(aiPaddlePos.current.x, aiPaddlePos.current.y, aiPaddlePos.current.z);
+          aiPaddleGroup.rotation.y = (aiPaddlePos.current.x * -0.15) - Math.PI; // Face player
+          aiPaddleGroup.rotation.x = -Math.PI / 16; // slightly tilted down forward
         }
-
-        // Interpolate AI physical movement speeds according to difficulty limits
-        const maxDist = aiDiff.speedLimit * dt;
-        const dx = aiPaddleTarget.current.x - aiPaddlePos.current.x;
-        const dy = aiPaddleTarget.current.y - aiPaddlePos.current.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist > maxDist && dist > 0.001) {
-          aiPaddlePos.current.x += (dx / dist) * maxDist;
-          aiPaddlePos.current.y += (dy / dist) * maxDist;
-        } else {
-          aiPaddlePos.current.x += dx * 0.2;
-          aiPaddlePos.current.y += dy * 0.2;
-        }
-        aiPaddlePos.current.z = 1.45;
-
-        // Apply values to visual mesh
-        aiPaddleGroup.position.set(aiPaddlePos.current.x, aiPaddlePos.current.y, aiPaddlePos.current.z);
-        aiPaddleGroup.rotation.y = (aiPaddlePos.current.x * -0.15) - Math.PI; // Face player
-        aiPaddleGroup.rotation.x = -Math.PI / 16; // slightly tilted down forward
 
         // --- HIGH FIDELITY BALL PHYSICAL GRAPHICS ---
         if (ballPhysics.current.isTossed) {
@@ -1272,12 +1414,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               triggerSparks(ballPhysics.current.position, 0xff7e6b);
 
               onStatusUpdate("RALLY ACTIVE");
+
+              // Broadcast player hit to other client
+              if (gameMode === GameMode.MULTIPLAYER && socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                  type: "ball_hit",
+                  pos: [ballPhysics.current.position.x, ballPhysics.current.position.y, ballPhysics.current.position.z],
+                  vel: [ballPhysics.current.velocity.x, ballPhysics.current.velocity.y, ballPhysics.current.velocity.z],
+                  spin: [ballPhysics.current.spin.x, ballPhysics.current.spin.y, ballPhysics.current.spin.z],
+                }));
+              }
             }
           }
 
-          // 4. Opponent paddle collision check (AI strike)
-          // AI operates at Z = 1.45m
-          if (ballZ > 1.1 && ballZ <= 1.6 && ballPhysics.current.velocity.z > 0) {
+          // 4. Opponent paddle collision check (AI strike) Skip in Multiplayer
+          if (gameMode !== GameMode.MULTIPLAYER && ballZ > 1.1 && ballZ <= 1.6 && ballPhysics.current.velocity.z > 0) {
             const xDiff = ballPhysics.current.position.x - aiPaddlePos.current.x;
             const yDiff = ballPhysics.current.position.y - aiPaddlePos.current.y;
             const distance2D = Math.sqrt(xDiff * xDiff + yDiff * yDiff);

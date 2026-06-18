@@ -16,6 +16,8 @@ interface GameHUDProps {
   onExitToMenu: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  myNickname?: string;
+  opponentNickname?: string;
 }
 
 export const GameHUD: React.FC<GameHUDProps> = ({
@@ -30,6 +32,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onExitToMenu,
   soundEnabled,
   onToggleSound,
+  myNickname = "",
+  opponentNickname = "",
 }) => {
   const padZero = (n: number) => n.toString().padStart(2, "0");
 
@@ -69,7 +73,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         {/* Center: Glowing Floating Scoreboard from Sleek Design */}
         <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-12 z-20">
           <div className="flex flex-col items-center">
-            <span className="text-[9px] uppercase tracking-widest text-[#8C847E] mb-1">Player</span>
+            <span className="text-[9px] uppercase tracking-widest text-[#8C847E] mb-1">
+              {gameMode === GameMode.MULTIPLAYER ? myNickname || "YOU" : "Player"}
+            </span>
             <span className="text-4xl sm:text-5xl font-light text-[#4A433F] tracking-normal font-sans">
               {padZero(score.player)}
             </span>
@@ -77,7 +83,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <div className="w-[1px] h-10 bg-[#D6C7B3]"></div>
           <div className="flex flex-col items-center">
             <span className="text-[9px] uppercase tracking-widest text-[#8C847E] mb-1">
-              {gameMode === GameMode.PRACTICE ? "Practice Bot" : "AI Bot"}
+              {gameMode === GameMode.MULTIPLAYER
+                ? opponentNickname || "OPPONENT"
+                : gameMode === GameMode.PRACTICE
+                  ? "Practice Bot"
+                  : "AI Bot"}
             </span>
             <span className="text-4xl sm:text-5xl font-light text-[#4A433F] tracking-normal font-sans">
               {padZero(score.opponent)}
@@ -114,10 +124,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
 
         {serviceStatus !== ServiceStatus.NONE && !isPaused && (
-          <div className="text-[9px] tracking-[0.25em] font-semibold text-[#8C847E] bg-white/20 border border-white/10 px-4 py-1.5 rounded-full backdrop-blur-xs animate-pulse text-center w-max">
+          <div className="text-[9px] tracking-[0.25em] font-semibold text-[#8C847E] bg-white/25 border border-white/10 px-4 py-1.5 rounded-full backdrop-blur-xs animate-pulse text-center w-max">
             {serviceStatus === ServiceStatus.PLAYER_SERVE
               ? "TOSS HIGH: CLICK TO THROW, CLICK AGAIN TO STRIKE"
-              : "WATCH THE BOT'S ANGLE CLOSELY"}
+              : `WATCH ${opponentNickname || "OPPONENT"}'S ANGLE CLOSELY`}
           </div>
         )}
       </div>

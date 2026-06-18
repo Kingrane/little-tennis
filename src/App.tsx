@@ -25,6 +25,23 @@ export default function App() {
   // Victory states
   const [matchWinner, setMatchWinner] = useState<"PLAYER" | "OPPONENT" | null>(null);
 
+  // Multiplayer online socket states
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [myRole, setMyRole] = useState<"host" | "guest" | null>(null);
+  const [myNickname, setMyNickname] = useState("");
+  const [opponentNickname, setOpponentNickname] = useState("");
+  const [opponentPaddleType, setOpponentPaddleType] = useState<PaddleType | null>(null);
+  const [roomCode, setRoomCode] = useState("");
+
+  // Clean socket effect
+  useEffect(() => {
+    return () => {
+      if (socket) {
+        socket.close();
+      }
+    };
+  }, [socket]);
+
   // Initialize sound preferences
   useEffect(() => {
     audioManager.setEnabled(soundEnabled);
@@ -55,6 +72,10 @@ export default function App() {
   };
 
   const startNewGame = (mode: GameMode, diff: Difficulty, paddle: PaddleType) => {
+    if (socket) {
+      socket.close();
+      setSocket(null);
+    }
     setGameMode(mode);
     setDifficulty(diff);
     setPaddleType(paddle);
@@ -65,7 +86,33 @@ export default function App() {
     setGameStateTrigger((prev) => prev + 1);
   };
 
+  const startMultiplayerGame = (
+    sock: WebSocket,
+    role: "host" | "guest",
+    room: string,
+    myNick: string,
+    oppNick: string,
+    oppPaddle: PaddleType
+  ) => {
+    setSocket(sock);
+    setMyRole(role);
+    setRoomCode(room);
+    setMyNickname(myNick);
+    setOpponentNickname(oppNick);
+    setOpponentPaddleType(oppPaddle);
+
+    setScore({ player: 0, opponent: 0 });
+    setMatchWinner(null);
+    setGameMode(GameMode.MULTIPLAYER);
+    setIsPaused(false);
+    setStatusText("ARENA CONNECTED — GET READY!");
+    setGameStateTrigger((prev) => prev + 1);
+  };
+
   const handleResetMatch = () => {
+    if (gameMode === GameMode.MULTIPLAYER && socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "restart_match" }));
+    }
     setScore({ player: 0, opponent: 0 });
     setMatchWinner(null);
     setIsPaused(false);
@@ -75,6 +122,10 @@ export default function App() {
   };
 
   const handleExitToMenu = () => {
+    if (socket) {
+      socket.close();
+      setSocket(null);
+    }
     setGameMode(GameMode.MENU);
     setMatchWinner(null);
     setIsPaused(false);
@@ -103,6 +154,7 @@ export default function App() {
           defaultPaddle={paddleType}
           soundEnabled={soundEnabled}
           onToggleSound={handleToggleSound}
+          onStartMultiplayer={startMultiplayerGame}
         />
       )}
 
@@ -120,6 +172,11 @@ export default function App() {
             score={score}
             onResetScores={handleResetMatch}
             gameStateTrigger={gameStateTrigger}
+            socket={socket}
+            myRole={myRole}
+            myNickname={myNickname}
+            opponentNickname={opponentNickname}
+            opponentPaddleType={opponentPaddleType || paddleType}
           />
 
           <GameHUD
@@ -134,6 +191,8 @@ export default function App() {
             onExitToMenu={handleExitToMenu}
             soundEnabled={soundEnabled}
             onToggleSound={handleToggleSound}
+            myNickname={myNickname}
+            opponentNickname={opponentNickname}
           />
         </div>
       )}
@@ -155,10 +214,12 @@ export default function App() {
                   CONGRATULATIONS
                 </span>
                 <h2 className="text-2xl font-extralight tracking-widest text-[#3d3831] uppercase mb-2">
-                  MATCH VICTORY
+                  {gameMode === GameMode.MULTIPLAYER ? `${myNickname || "YOU"} WINS` : "MATCH VICTORY"}
                 </h2>
                 <p className="text-xs text-[#8c8272] font-light max-w-xs leading-relaxed mb-6">
-                  You out-curved and dominated the arena with flawless tactical spins and placements.
+                  {gameMode === GameMode.MULTIPLAYER
+                    ? "You claimed supremacy over the online arena with pristine precision."
+                    : "You out-curved and dominated the arena with flawless tactical spins."}
                 </p>
               </>
             ) : (
@@ -170,10 +231,12 @@ export default function App() {
                   MATCH OVER
                 </span>
                 <h2 className="text-2xl font-extralight tracking-widest text-[#3d3831] uppercase mb-2">
-                  BOT VICTORY
+                  {gameMode === GameMode.MULTIPLAYER ? `${opponentNickname || "OPPONENT"} WINS` : "BOT VICTORY"}
                 </h2>
                 <p className="text-xs text-[#8c8272] font-light max-w-xs leading-relaxed mb-6">
-                  The bot anticipated your sweeps. Train your topspin trajectory to crack its defense!
+                  {gameMode === GameMode.MULTIPLAYER
+                    ? "Your opponent read your moves perfectly this time. Try again!"
+                    : "The bot anticipated your sweeps. Train your topspin trajectory to crack its defense!"}
                 </p>
               </>
             )}
@@ -182,12 +245,16 @@ export default function App() {
             <div className="flex justify-center items-center gap-6 py-4 px-8 bg-[#faf8f5] border border-[#f3eee5] rounded-2xl mb-8 font-mono">
               <div className="flex flex-col items-center">
                 <span className="text-2xl text-[#3d3831] font-semibold">{score.player}</span>
-                <span className="text-[9px] text-[#9a8e7e] tracking-wider uppercase mt-0.5">Player</span>
+                <span className="text-[9px] text-[#9a8e7e] tracking-wider uppercase mt-0.5">
+                  {gameMode === GameMode.MULTIPLAYER ? myNickname || "YOU" : "Player"}
+                </span>
               </div>
               <div className="h-6 w-[1px] bg-[#dfd6c6]" />
               <div className="flex flex-col items-center">
                 <span className="text-2xl text-[#3d3831] font-semibold">{score.opponent}</span>
-                <span className="text-[9px] text-[#9a8e7e] tracking-wider uppercase mt-0.5">AI Opponent</span>
+                <span className="text-[9px] text-[#9a8e7e] tracking-wider uppercase mt-0.5">
+                  {gameMode === GameMode.MULTIPLAYER ? opponentNickname || "OPPONENT" : "AI Opponent"}
+                </span>
               </div>
             </div>
 
