@@ -107,8 +107,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             }}
             onMouseEnter={handleHover}
             className={`p-3 rounded-full border transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.15)] ${isDark
-                ? "border-white/5 bg-white/5 text-[#EAE3DC] hover:bg-white/10 hover:text-white"
-                : "border-[#1C1613]/10 bg-white/70 text-[#1C1613] hover:bg-white hover:border-[#1C1613]/20"
+              ? "border-white/5 bg-white/5 text-[#EAE3DC] hover:bg-white/10 hover:text-white"
+              : "border-[#1C1613]/10 bg-white/70 text-[#1C1613] hover:bg-white hover:border-[#1C1613]/20"
               }`}
             title={isDark ? "Activate Clean Light Theme" : "Activate Cinematic Dark Theme"}
           >
@@ -124,8 +124,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             onClick={onToggleSound}
             onMouseEnter={handleHover}
             className={`p-3 rounded-full border transition-all duration-300 shadow-[0_4px_16px_rgba(0,0,0,0.15)] ${isDark
-                ? "border-white/5 bg-white/5 text-[#EAE3DC] hover:bg-white/10 hover:text-white"
-                : "border-[#1C1613]/10 bg-white/70 text-[#1C1613] hover:bg-white hover:border-[#1C1613]/20"
+              ? "border-white/5 bg-white/5 text-[#EAE3DC] hover:bg-white/10 hover:text-white"
+              : "border-[#1C1613]/10 bg-white/70 text-[#1C1613] hover:bg-white hover:border-[#1C1613]/20"
               }`}
             title={soundEnabled ? "Mute Sound Engines" : "Enable Sound Engines"}
           >
@@ -185,16 +185,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   onClick={() => handleSelectDifficulty(diff.id)}
                   onMouseEnter={handleHover}
                   className={`relative p-4 rounded-[18px] text-left border flex items-center justify-between transition-all duration-300 overflow-hidden pl-5 ${isSelected
+                    ? isDark
+                      ? "bg-[#cb6239]/10 border-[#DF5F43] shadow-[0_8px_32px_rgba(223,95,67,0.18)] -translate-y-[1px] border-l-4"
+                      : "bg-white border-[#DF5F43] shadow-[0_8px_32px_rgba(223,95,67,0.12)] -translate-y-[1px] border-l-4"
+                    : isLocked
                       ? isDark
-                        ? "bg-[#cb6239]/10 border-[#DF5F43] shadow-[0_8px_32px_rgba(223,95,67,0.18)] -translate-y-[1px] border-l-4"
-                        : "bg-white border-[#DF5F43] shadow-[0_8px_32px_rgba(223,95,67,0.12)] -translate-y-[1px] border-l-4"
-                      : isLocked
-                        ? isDark
-                          ? "bg-white/[0.01] border-white/5 opacity-40 hover:opacity-70 hover:bg-white/[0.03]"
-                          : "bg-black/[0.01] border-black/5 opacity-40 hover:opacity-70 hover:bg-black/[0.02]"
-                        : isDark
-                          ? "bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20"
-                          : "bg-[#EFECE6] border-[#1C1613]/12 hover:bg-[#E5E1D7] hover:border-[#1C1613]/25"
+                        ? "bg-white/[0.01] border-white/5 opacity-40 hover:opacity-70 hover:bg-white/[0.03]"
+                        : "bg-black/[0.01] border-black/5 opacity-40 hover:opacity-70 hover:bg-black/[0.02]"
+                      : isDark
+                        ? "bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20"
+                        : "bg-[#EFECE6] border-[#1C1613]/12 hover:bg-[#E5E1D7] hover:border-[#1C1613]/25"
                     }`}
                   style={{
                     borderLeftColor: isSelected ? botColor : undefined
@@ -204,8 +204,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-2">
                         <span className={`text-xs tracking-wider uppercase font-semibold transition-colors duration-300 ${isSelected
-                            ? isDark ? "text-white" : "text-[#1C1613]"
-                            : isDark ? "text-[#EAE3DC]" : "text-[#1C1613]"
+                          ? isDark ? "text-white" : "text-[#1C1613]"
+                          : isDark ? "text-[#EAE3DC]" : "text-[#1C1613]"
                           }`}>
                           {diff.name}
                         </span>
@@ -216,8 +216,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                         )}
                       </div>
                       <span className={`text-[10px] tracking-wide font-light transition-colors duration-300 ${isSelected
-                          ? isDark ? "text-white/60" : "text-[#1C1613]/70"
-                          : isDark ? "text-white/40" : "text-[#1C1613]/55"
+                        ? isDark ? "text-white/60" : "text-[#1C1613]/70"
+                        : isDark ? "text-white/40" : "text-[#1C1613]/55"
                         }`}>
                         {isImpossible && isLocked ? (
                           "Requires 100 Wins"
@@ -261,7 +261,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           <div className="flex flex-col gap-2 mb-10 select-none pointer-events-none">
             <h1 className={`text-5xl tracking-[0.25em] font-light uppercase transition-colors duration-300 ${isDark ? "text-[#EAE3DC]" : "text-[#1C1613]"
               }`}>
-              SOLACE
+              ROMKA
             </h1>
             <h1 className={`text-4xl tracking-[0.18em] font-extralight uppercase transition-colors duration-300 ${isDark ? "text-white/60" : "text-[#1C1613]/60"
               }`}>
@@ -278,8 +278,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               onClick={handleStartMatch}
               onMouseEnter={handleHover}
               className={`py-4 px-8 w-full rounded-full text-xs font-bold tracking-[0.2em] transition-all duration-300 flex items-center justify-center gap-3 relative transform hover:-translate-y-[2px] active:translate-y-[1px] ${isDark
-                  ? "bg-[#201917]/95 text-white/90 border border-white/10 hover:border-[#DF5F43]/40 hover:bg-[#201917] hover:text-white shadow-[0_12px_36px_-6px_rgba(0,0,0,0.6)]"
-                  : "bg-[#1C1613] text-[#F7F4EE] border border-[#1C1613]/5 hover:bg-[#2D231E] hover:text-white hover:border-[#DF5F43]/30 shadow-[0_12px_32px_-6px_rgba(28,22,19,0.35)]"
+                ? "bg-[#201917]/95 text-white/90 border border-white/10 hover:border-[#DF5F43]/40 hover:bg-[#201917] hover:text-white shadow-[0_12px_36px_-6px_rgba(0,0,0,0.6)]"
+                : "bg-[#1C1613] text-[#F7F4EE] border border-[#1C1613]/5 hover:bg-[#2D231E] hover:text-white hover:border-[#DF5F43]/30 shadow-[0_12px_32px_-6px_rgba(28,22,19,0.35)]"
                 }`}
             >
               <Play className="w-[11px] h-[11px] fill-[#DF5F43] stroke-[#DF5F43]" />
@@ -291,8 +291,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               onClick={handleStartPractice}
               onMouseEnter={handleHover}
               className={`py-4 px-8 w-full rounded-full text-xs font-semibold tracking-[0.18em] transition-all duration-300 flex items-center justify-center gap-3 transform hover:-translate-y-[1px] ${isDark
-                  ? "border-white/15 hover:border-white/25 bg-white/5 hover:bg-white/10 text-white shadow-md font-bold"
-                  : "border-[#1C1613]/20 hover:border-[#1C1613]/40 bg-white hover:bg-[#EFECE6] text-[#1C1613] font-bold shadow-md"
+                ? "border-white/15 hover:border-white/25 bg-white/5 hover:bg-white/10 text-white shadow-md font-bold"
+                : "border-[#1C1613]/20 hover:border-[#1C1613]/40 bg-white hover:bg-[#EFECE6] text-[#1C1613] font-bold shadow-md"
                 }`}
             >
               SANDBOX PRACTICE
@@ -302,8 +302,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <button
               disabled
               className={`py-4 px-8 w-full border rounded-full text-xs font-semibold tracking-[0.15em] cursor-not-allowed flex items-center justify-center gap-3 transition-colors duration-300 ${isDark
-                  ? "border-white/10 bg-white/[0.012] text-white/35"
-                  : "border-[#1C1613]/12 bg-[#EFECE6]/40 text-[#1C1613]/45"
+                ? "border-white/10 bg-white/[0.012] text-white/35"
+                : "border-[#1C1613]/12 bg-[#EFECE6]/40 text-[#1C1613]/45"
                 }`}
             >
               MULTIPLAYER (COMING SOON)
@@ -349,12 +349,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   onClick={() => handleSelectPaddle(pad.id)}
                   onMouseEnter={handleHover}
                   className={`p-3 rounded-[18px] text-left border flex items-center gap-4 transition-all duration-300 w-full pl-5 ${isSelected
-                      ? isDark
-                        ? "bg-[#cb6239]/10 border-[#DF5F43] shadow-[0_8px_32px_rgba(223,95,67,0.18)] -translate-y-[1px] border-l-4"
-                        : "bg-white border-[#DF5F43] shadow-[0_8px_32px_rgba(223,95,67,0.12)] -translate-y-[1px] border-l-4"
-                      : isDark
-                        ? "bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20"
-                        : "bg-[#EFECE6] border-[#1C1613]/12 hover:bg-[#E5E1D7] hover:border-[#1C1613]/25"
+                    ? isDark
+                      ? "bg-[#cb6239]/10 border-[#DF5F43] shadow-[0_8px_32px_rgba(223,95,67,0.18)] -translate-y-[1px] border-l-4"
+                      : "bg-white border-[#DF5F43] shadow-[0_8px_32px_rgba(223,95,67,0.12)] -translate-y-[1px] border-l-4"
+                    : isDark
+                      ? "bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-white/20"
+                      : "bg-[#EFECE6] border-[#1C1613]/12 hover:bg-[#E5E1D7] hover:border-[#1C1613]/25"
                     }`}
                   style={{
                     borderLeftColor: isSelected ? pad.color : undefined
@@ -362,8 +362,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 >
                   {/* Circle Colored paddle visual dot */}
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center relative flex-shrink-0 shadow-inner border transition-all duration-300 ${isSelected
-                      ? isDark ? "bg-white/10 border-white/20" : "bg-black/5 border-black/10"
-                      : isDark ? "bg-white/[0.04] border-white/5" : "bg-[#1C1613]/5 border-[#1C1613]/5"
+                    ? isDark ? "bg-white/10 border-white/20" : "bg-black/5 border-black/10"
+                    : isDark ? "bg-white/[0.04] border-white/5" : "bg-[#1C1613]/5 border-[#1C1613]/5"
                     }`}>
                     <div
                       className="w-5.5 h-5.5 rounded-full transition-all duration-300 shadow-[0_2px_8px_rgba(0,0,0,0.3)]"
@@ -381,8 +381,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   <div className="flex flex-col gap-0.5">
                     <div className="flex items-center gap-2">
                       <span className={`text-xs uppercase tracking-wider font-semibold transition-colors duration-300 ${isSelected
-                          ? isDark ? "text-white" : "text-[#1C1613]"
-                          : isDark ? "text-[#EAE3DC]" : "text-[#1C1613]"
+                        ? isDark ? "text-white" : "text-[#1C1613]"
+                        : isDark ? "text-[#EAE3DC]" : "text-[#1C1613]"
                         }`}>
                         {pad.name}
                       </span>
@@ -393,8 +393,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                       )}
                     </div>
                     <span className={`text-[9px] tracking-wide font-light transition-colors duration-300 ${isSelected
-                        ? isDark ? "text-white/60" : "text-[#1C1613]/70"
-                        : isDark ? "text-white/40" : "text-[#1C1613]/55"
+                      ? isDark ? "text-white/60" : "text-[#1C1613]/70"
+                      : isDark ? "text-white/40" : "text-[#1C1613]/55"
                       }`}>
                       {getNiceSub(pad.id)}
                     </span>
@@ -462,16 +462,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       <footer className={`w-full max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6 z-10 text-[9px] tracking-[0.25em] uppercase mt-8 transition-colors duration-300 ${isDark ? "border-white/[0.04] text-white/30" : "border-[#1C1613]/10 text-[#1C1613]/55"
         }`}>
         <div className="flex items-center gap-4">
-          <span>STABLE PHYSICS SOLVER V2.4</span>
+          <span>супер реалистичная физика</span>
           <span className={`hidden sm:inline transition-colors duration-300 ${isDark ? "text-white/10" : "text-black/10"
             }`}>•</span>
-          <span>144HZ ANALYTICAL KINEMATICS</span>
+          <span>здравствуйте</span>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
           <span className={`tracking-[0.2em] font-medium transition-colors duration-300 ${isDark ? "text-white/45" : "text-[#1C1613]/60"
-            }`}>ARENA CONNECTED</span>
+            }`}>ромка навайбкодил</span>
         </div>
       </footer>
     </div>
