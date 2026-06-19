@@ -72,7 +72,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const isMouseDown = useRef(false);
   const lastTossTime = useRef(0);
   const lastTableBounceTime = useRef(0);
+  const lastBounceZSign = useRef(0); // 1 for Opponent side (Z > 0), -1 for Player side (Z < 0)
   const hasFiredServe = useRef(false);
+  const sessionStartTime = useRef<number>(0);
 
   const rallyState = useRef({
     scorePlayer: score.player,
@@ -88,6 +90,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     rallyBounces: 0, // contacts in current point
     awaitingServeTuck: true,
     isScorePending: false,
+    serveNetTouched: false,
   });
 
   // Sync scores from parent
@@ -96,9 +99,15 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     rallyState.current.scoreOpponent = score.opponent;
   }, [score]);
 
+  // Update session start time when pausing/unpausing, to avoid click bubbles triggering serves
+  useEffect(() => {
+    sessionStartTime.current = performance.now();
+  }, [isPaused]);
+
   // Initialize or reset game/rally state accurately on lobby start or restart action
   useEffect(() => {
     if (gameMode !== GameMode.MENU) {
+      sessionStartTime.current = performance.now();
       const totalPoints = score.player + score.opponent;
       let playerServes = false;
 
@@ -165,7 +174,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     rallyState.current.rallyBounces = 0;
     rallyState.current.awaitingServeTuck = true;
     rallyState.current.isScorePending = false;
+    rallyState.current.serveNetTouched = false;
     lastTableBounceTime.current = 0;
+    lastBounceZSign.current = 0;
     hasFiredServe.current = false;
 
     if (server === "PLAYER") {
@@ -201,37 +212,53 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     ballPhysics.current.velocity.set(0, 3.8, 0); // throw upwards
     onStatusUpdate("OPPONENT SERVING...");
 
-    // Opponent hitting timer
+    // Opponent hitting timer - wait for descent at 720ms
     setTimeout(() => {
       if (rallyState.current.serveStatus === ServiceStatus.OPPONENT_SERVE && ballPhysics.current.isTossed && gameMode !== GameMode.MENU) {
         opponentServeHit();
       }
-    }, 450);
+    }, 720);
   }
 
   function opponentServeHit() {
     if (isPaused || gameMode === GameMode.MENU) return;
-    // Calculate precise target on the player's side of the table
-    // Must hit opponent table first (Y=0.76, Z in [0, 1.37]) then player side (Z in [-1.37, 0])
     const diff = difficultyConfigRef.current;
-    const targetX = (Math.random() - 0.5) * TABLE_DIMENSIONS.width * 0.7;
-    // Serve target on opponent table side
-    const targetFirstZ = TABLE_DIMENSIONS.length * 0.25; // closer to AI net
-    // Serve target on player court side
-    const targetSecondZ = -TABLE_DIMENSIONS.length * 0.35; // mid player side
 
-    // We can solve simple projectile motion or add simple direct velocity
-    // AI strikes downwards aiming at the table
-    const xVel = (targetX - ballPhysics.current.position.x) * 2.1;
-    const yVel = -2.1; // downward strike
-    const zVel = -5.0 - (Math.random() * 1.5); // shoot towards player
+    // Choose target horizontal placement on player's court
+    const targetX = (Math.random() - 0.5) * TABLE_DIMENSIONS.width * 0.70;
+    const ballPos = ballPhysics.current.position;
+    const ballZ = ballPos.z;
+    const ballY = ballPos.y;
+    const ballX = ballPos.x;
 
-    ballPhysics.current.velocity.set(xVel, yVel, zVel);
+    // Symmetrical high-clearance serve logic: mirroring the player's extremely reliable solver.
+    // Lands safe on bot's own side first at Z = 0.72 (safely deep)
+    const targetBounceZ = 0.22;
+    const outVelZ = -6.6; // High forward speed to cleanly clear the net area
+    const t = (targetBounceZ - ballZ) / outVelZ;
+    const yTarget = TABLE_DIMENSIONS.height + ballPhysics.current.radius; // 0.78
 
-    // Apply some slight mock serving spin based on AI parameters
-    const topspin = -10 - Math.random() * 30 * diff.spinAggression;
-    const sidespin = (Math.random() - 0.5) * 40 * diff.spinAggression;
-    ballPhysics.current.spin.set(topspin, sidespin, 0);
+    let outVelY = (yTarget - ballY + 4.905 * t * t) / t;
+    // Mirror the precise player's optimal downward pitch bounds
+    outVelY = Math.max(-2.4, Math.min(-1.7, outVelY));
+
+    // Total travel time to player's court for horizontal aiming
+    const targetSecondZ = -TABLE_DIMENSIONS.length * 0.55; // mid player side
+    const tTotal = (targetSecondZ - ballZ) / outVelZ;
+    let outVelX = (targetX - ballX) / tTotal;
+    outVelX = Math.max(-1.4, Math.min(1.4, outVelX));
+
+    ballPhysics.current.velocity.set(outVelX, outVelY, outVelZ);
+
+    // Minimize spin on serves for extremely stable, natural, high-clearance trajectory
+    ballPhysics.current.spin.set(0, 0, 0);
+
+    // Snap AI paddle to the ball on contact for visual perfection
+    aiPaddlePos.current.x = ballPos.x;
+    aiPaddlePos.current.y = ballPos.y;
+    aiPaddlePos.current.z = ballPos.z;
+    aiPaddleTarget.current.x = ballPos.x;
+    aiPaddleTarget.current.y = ballPos.y;
 
     rallyState.current.lastStriker = "OPPONENT";
     rallyState.current.isRallyActive = true;
@@ -323,6 +350,49 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }, 2000);
   }
 
+  // Handle a Let (serve touches net and lands correctly)
+  function triggerLet(reasonText: string) {
+    if (rallyState.current.isScorePending) return;
+    rallyState.current.isScorePending = true;
+
+    // Immediately stop ball dynamics
+    ballPhysics.current.isTossed = false;
+    ballPhysics.current.velocity.set(0, 0, 0);
+    const originalServeStatus = rallyState.current.serveStatus;
+    rallyState.current.serveStatus = ServiceStatus.NONE;
+    onSetService(ServiceStatus.NONE);
+
+    // Identify who was serving right before this
+    const currentServer = originalServeStatus === ServiceStatus.PLAYER_SERVE ? "PLAYER" : "OPPONENT";
+
+    onStatusUpdate(`LET — ${reasonText}`);
+    triggerPulseRing(ballPhysics.current.position, 0xfacc15); // amber/yellow indicator ring
+
+    if (gameMode === GameMode.MULTIPLAYER) {
+      if (myRole === "host") {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: "let_occurred",
+            serverRole: currentServer === "PLAYER" ? "host" : "guest",
+            reason: reasonText,
+          }));
+        }
+
+        setTimeout(() => {
+          if (gameMode === GameMode.MULTIPLAYER) {
+            resetBall(currentServer);
+          }
+        }, 2000);
+      }
+    } else {
+      setTimeout(() => {
+        if (gameMode !== GameMode.MENU) {
+          resetBall(currentServer);
+        }
+      }, 2000);
+    }
+  }
+
   // --- MULTIPLAYER WEBSOCKET SIGNAL SYNC ---
   useEffect(() => {
     if (!socket || gameMode !== GameMode.MULTIPLAYER) return;
@@ -408,6 +478,24 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               ? (totalPoints % 2 === 0)
               : (Math.floor(totalPoints / 2) % 2 === 0);
             resetBall(isHostServing ? "OPPONENT" : "PLAYER");
+          }, 2000);
+
+        } else if (data.type === "let_occurred") {
+          // Guest receives let notification from authoritative Host referee
+          ballPhysics.current.isTossed = false;
+          ballPhysics.current.velocity.set(0, 0, 0);
+          rallyState.current.serveStatus = ServiceStatus.NONE;
+          onSetService(ServiceStatus.NONE);
+          rallyState.current.isScorePending = true;
+
+          onStatusUpdate(`LET — ${data.reason}`);
+          triggerPulseRing(ballPhysics.current.position, 0xfacc15);
+
+          const servingPlayer = data.serverRole === myRole ? "PLAYER" : "OPPONENT";
+          setTimeout(() => {
+            if (gameMode === GameMode.MULTIPLAYER) {
+              resetBall(servingPlayer);
+            }
           }, 2000);
 
         } else if (data.type === "ball_sync") {
@@ -956,6 +1044,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const handleMouseClick = () => {
       if (isPaused || gameMode === GameMode.MENU) return;
 
+      // Prevent click bubble/instant toss right when entering a new mode
+      if (performance.now() - sessionStartTime.current < 250) {
+        return;
+      }
+
       // If ball hasn't been served and it's player serve
       if (
         rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE &&
@@ -1147,7 +1240,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           aiPaddleTarget.current.z = 1.45;
 
           // Anticipated hit spot. If the ball is moving towards the AI side (positive velocity)
-          if (ballPhysics.current.velocity.z > 0.0) {
+          if (rallyState.current.serveStatus === ServiceStatus.OPPONENT_SERVE) {
+            // Track the tossed ball directly so the bot paddle moves gracefully to meet it
+            aiPaddleTarget.current.x = ballPhysics.current.position.x;
+            aiPaddleTarget.current.y = ballPhysics.current.position.y;
+          } else if (ballPhysics.current.velocity.z > 0.0) {
             // Pre-solve linear tracking target based on velocity towards the baseline
             const zDistance = 1.45 - ballPhysics.current.position.z;
             const interceptTime = Math.max(0.01, zDistance / ballPhysics.current.velocity.z);
@@ -1411,17 +1508,26 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             // The ball contacts the table surface at Y = 0.76 (incorporate visual spherical radius)
             if (isAboveTable && ballPhysics.current.position.y <= TABLE_DIMENSIONS.height + ballPhysics.current.radius) {
               if (ballPhysics.current.velocity.y < 0) {
+                // ALWAYS resolve physical collision immediately to prevent ball sinking or clipping through the table
+                ballPhysics.current.position.y = TABLE_DIMENSIONS.height + ballPhysics.current.radius;
+                ballPhysics.current.velocity.y = -ballPhysics.current.velocity.y * ballPhysics.current.elasticityTable;
+
+                const frictionFactor = 0.08;
+                ballPhysics.current.velocity.z += ballPhysics.current.spin.x * ballPhysics.current.radius * frictionFactor;
+                ballPhysics.current.velocity.x += ballPhysics.current.spin.y * ballPhysics.current.radius * frictionFactor;
+                ballPhysics.current.spin.multiplyScalar(0.70);
+
                 const now = performance.now();
-                if (now - lastTableBounceTime.current >= 120) {
+                const currentZSign = Math.sign(ballPhysics.current.position.z);
+
+                // Allow bounce IMMEDIATELY if the ball has crossed the net to the other half.
+                // Otherwise require a solid 160ms separation interval to fully filter physical jitters and multi-bounces.
+                const hasCrossedNet = lastBounceZSign.current !== 0 && currentZSign !== lastBounceZSign.current;
+                const timeElapsed = now - lastTableBounceTime.current;
+
+                if (hasCrossedNet || timeElapsed >= 160 || lastTableBounceTime.current === 0) {
                   lastTableBounceTime.current = now;
-
-                  ballPhysics.current.position.y = TABLE_DIMENSIONS.height + ballPhysics.current.radius;
-                  ballPhysics.current.velocity.y = -ballPhysics.current.velocity.y * ballPhysics.current.elasticityTable;
-
-                  const frictionFactor = 0.08;
-                  ballPhysics.current.velocity.z += ballPhysics.current.spin.x * ballPhysics.current.radius * frictionFactor;
-                  ballPhysics.current.velocity.x += ballPhysics.current.spin.y * ballPhysics.current.radius * frictionFactor;
-                  ballPhysics.current.spin.multiplyScalar(0.70);
+                  lastBounceZSign.current = currentZSign;
 
                   const intensity = Math.min(1.0, Math.max(0.1, Math.abs(ballPhysics.current.velocity.y) / 3));
                   audioManager.playTableBounce(intensity);
@@ -1493,17 +1599,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
               if (isWithinNetHeight && isWithinNetWidth) {
                 audioManager.playNetTouch();
-                ballPhysics.current.position.z = prevZ;
-                ballPhysics.current.velocity.z = -ballPhysics.current.velocity.z * 0.28;
-                ballPhysics.current.velocity.y *= 0.8;
-                ballPhysics.current.spin.set(0, 0, 0);
 
                 if (rallyState.current.serveStatus !== ServiceStatus.NONE) {
-                  if (rallyState.current.lastStriker === "PLAYER") {
-                    scorePoint("OPPONENT", "SERVE HIT THE NET");
+                  // Direct point award on serve net clips as requested
+                  if (rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE) {
+                    scorePoint("OPPONENT", "YOUR SERVE HIT THE NET");
                   } else {
-                    scorePoint("PLAYER", `${opponentNickname || "OPPONENT"} SERVE HIT THE NET`);
+                    scorePoint("PLAYER", "BOT'S SERVE HIT THE NET");
                   }
+                } else {
+                  // Regular rally net clip: rebound standard physics
+                  ballPhysics.current.position.z = prevZ;
+                  ballPhysics.current.velocity.z = -ballPhysics.current.velocity.z * 0.28;
+                  ballPhysics.current.velocity.y *= 0.8;
+                  ballPhysics.current.spin.set(0, 0, 0);
                 }
               }
             }
