@@ -233,7 +233,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Symmetrical high-clearance serve logic: mirroring the player's extremely reliable solver.
     // Lands safe on bot's own side first at Z = 0.72 (safely deep)
-    const targetBounceZ = 0.22;
+    const targetBounceZ = 0.72;
     const outVelZ = -6.6; // High forward speed to cleanly clear the net area
     const t = (targetBounceZ - ballZ) / outVelZ;
     const yTarget = TABLE_DIMENSIONS.height + ballPhysics.current.radius; // 0.78
@@ -243,7 +243,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     outVelY = Math.max(-2.4, Math.min(-1.7, outVelY));
 
     // Total travel time to player's court for horizontal aiming
-    const targetSecondZ = -TABLE_DIMENSIONS.length * 0.55; // mid player side
+    const targetSecondZ = -TABLE_DIMENSIONS.length * 0.35; // mid player side
     const tTotal = (targetSecondZ - ballZ) / outVelZ;
     let outVelX = (targetX - ballX) / tTotal;
     outVelX = Math.max(-1.4, Math.min(1.4, outVelX));
@@ -1622,7 +1622,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             if (
               ballZ < -1.1 &&
               ballZ >= -1.6 &&
-              (ballPhysics.current.velocity.z < 0 ||
+              ((ballPhysics.current.velocity.z < 0 && rallyState.current.bouncesPlayerCourt >= 1) ||
                 (rallyState.current.serveStatus === ServiceStatus.PLAYER_SERVE &&
                   ballPhysics.current.velocity.z <= 0.01 &&
                   ballPhysics.current.velocity.y < 1.8 &&
@@ -1705,8 +1705,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               }
             }
 
-            // 4. Opponent paddle collision check (AI strike) Skip in Multiplayer
-            if (gameMode !== GameMode.MULTIPLAYER && ballZ > 1.1 && ballZ <= 1.6 && ballPhysics.current.velocity.z > 0) {
+            // 4. Opponent paddle collision check (AI strike) Skip in Multiplayer. Only allow strike after ball has bounced at least once on opponent court.
+            if (
+              gameMode !== GameMode.MULTIPLAYER &&
+              ballZ > 1.1 &&
+              ballZ <= 1.6 &&
+              ballPhysics.current.velocity.z > 0 &&
+              rallyState.current.bouncesOpponentCourt >= 1
+            ) {
               const xDiff = ballPhysics.current.position.x - aiPaddlePos.current.x;
               const yDiff = ballPhysics.current.position.y - aiPaddlePos.current.y;
               const distance2D = Math.sqrt(xDiff * xDiff + yDiff * yDiff);
